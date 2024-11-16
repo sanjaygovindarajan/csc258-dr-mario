@@ -922,6 +922,10 @@ lw $ra, 0($sp)                  # Load saved $ra
 addi $sp, $sp, 4                # Restore stack pointer
 lw $ra, 0($sp)                  # Load saved $ra
 addi $sp, $sp, 4                # Restore stack pointer
+jal DRAW_NEW_PILL
+lw $s1 initial_pill_row
+lw $s2 initial_pill_col
+li $s3 0
 j NO_UPDATE
 
 detect_fall:
