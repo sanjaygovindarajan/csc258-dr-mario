@@ -41,7 +41,7 @@ displayaddress:     .word       0x10008000   # Base address for the display
 grid_addresses:     .word       0x11000000   # Base address for the grid cell addresses
 
 # NUMERICAL VALUES
-width:              .word       128           # Width of the display (64 pixels)
+width:              .word       80           # Width of the display (64 pixels)
 height:             .word       64           # Height of the display (64 pixels)
 
 # COORDINATES
