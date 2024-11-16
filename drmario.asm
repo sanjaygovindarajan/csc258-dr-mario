@@ -638,9 +638,12 @@ UPDATE_CURRENT_PILL:
     
     move $t3, $a0
     move $t4, $a1
+    move $t5, $a2
     
+    prev_state_stored:
     move $a0, $s1
     move $a1, $s2
+    move $a2, $t5
     jal EXTRACT_CURRENT_PILL_COLOR
     move $t1, $v0
     move $t2, $v1
@@ -675,6 +678,7 @@ UPDATE_GRID:
     
     li $a0, 1
     li $a1, 0
+    move $a2, $s3
     jal UPDATE_CURRENT_PILL
 
     lw $ra, 0($sp)       # Restore return address
@@ -720,6 +724,7 @@ CHECK_KEYBOARD_INPUT:
         beq $t2, 0x61, HANDLE_MOVE_LEFT
         beq $t2, 0x73, HANDLE_DROP
         beq $t2, 0x64, HANDLE_MOVE_RIGHT
+        j end_CHECK_KEYBOARD_INPUT
     
     HANDLE_QUIT:
         jal INIT
@@ -727,8 +732,7 @@ CHECK_KEYBOARD_INPUT:
         j END_MAIN
     
     HANDLE_MOVE_LEFT:
-    jal GET_PILL_ADDRESSES
-        
+        jal GET_PILL_ADDRESSES  
         move $a0 $v0
         move $a1 $v1
         jal detect_left
@@ -736,6 +740,7 @@ CHECK_KEYBOARD_INPUT:
     
         li $a0, 0
         li $a1, -1
+        move $a2, $s3
         jal UPDATE_CURRENT_PILL
         jal PAINT_DISPLAY
         
@@ -743,7 +748,6 @@ CHECK_KEYBOARD_INPUT:
           
     HANDLE_MOVE_RIGHT:
         jal GET_PILL_ADDRESSES
-        
         move $a0 $v0
         move $a1 $v1
         jal detect_right
@@ -751,17 +755,36 @@ CHECK_KEYBOARD_INPUT:
 	    
 	    li $a0, 0
         li $a1, 1
+        move $a2, $s3
         jal UPDATE_CURRENT_PILL
         jal PAINT_DISPLAY
 
         j end_CHECK_KEYBOARD_INPUT
         
     HANDLE_ROTATE:
+        jal GET_PILL_ADDRESSES  
+        move $a0 $v0
+        move $a1 $v1
+        jal detect_left
+        bne $s3, 0, left_border_rotation_clear
+	    bne $v0 $zero end_CHECK_KEYBOARD_INPUT
+	    left_border_rotation_clear:
+	    
+	    jal GET_PILL_ADDRESSES
+        move $a0 $v0
+        move $a1 $v1
+        jal detect_right
+        bne $s3, 2, right_border_rotation_clear
+	    bne $v0 $zero end_CHECK_KEYBOARD_INPUT
+	    right_border_rotation_clear:
+    
         move $a2, $s3
         addi $s3, $s3, 1
         bne $s3, 4, continue_HANDLE_ROTATE
         li $s3, 0
+        
         continue_HANDLE_ROTATE:
+        
         li $a0, 0
         li $a1, 0
         jal UPDATE_CURRENT_PILL
@@ -781,6 +804,7 @@ CHECK_KEYBOARD_INPUT:
         offset_calculated_HANDLE_DROP:
             move $a0, $t9
             li $a1, 0
+            move $a2, $s3
             jal UPDATE_CURRENT_PILL
             jal PAINT_DISPLAY
          
