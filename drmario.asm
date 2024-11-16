@@ -41,7 +41,7 @@ displayaddress:     .word       0x10008000   # Base address for the display
 grid_addresses:     .word       0x11000000   # Base address for the grid cell addresses
 
 # NUMERICAL VALUES
-width:              .word       64           # Width of the display (64 pixels)
+width:              .word       80           # Width of the display (64 pixels)
 height:             .word       64           # Height of the display (64 pixels)
 
 # COORDINATES
@@ -79,7 +79,7 @@ game_loop:
     # 2a. Check for collisions
 	
 	# 2b. Update locations (capsules)
-	jal UPDATE_GRID
+	
 	
 	# 3. Draw the screen
 	jal PAINT_DISPLAY
@@ -651,7 +651,8 @@ SLEEP1000:
         addi $t9, $t9, 1
         li $t8, 100
         bne $t9, $t8, SLEEP_LOOP
-        
+   
+    jal UPDATE_GRID
     lw $ra, 0($sp)       # Restore return address
     addi $sp, $sp, 4     # Restore stack pointer   
     jr $ra
@@ -678,16 +679,70 @@ CHECK_KEYBOARD_INPUT:
         jal PAINT_DISPLAY
         j END_MAIN
     
-    HANDLE_MOVE_LEFT:      
+    HANDLE_MOVE_LEFT:
+    jal GET_PILL_ADDRESSES
+        
+        move $a0 $v0
+        move $a1 $v1
+        jal detect_left
+	    bne $v0 $zero end_CHECK_KEYBOARD_INPUT
+    
         li $a0, 0
         li $a1, -1
         jal UPDATE_CURRENT_PILL
         jal PAINT_DISPLAY
         
         j end_CHECK_KEYBOARD_INPUT
+        
+   GET_PILL_ADDRESSES:
+ 
+    addi $sp, $sp, -4        # Allocate space on the stack
+    sw $ra, 0($sp)           # Save return address
+
+    move $a0, $s1
+    move $a1, $s2
+    jal GET_CELL_IN_ARRAY
+    move $v1, $v0
+
+    beq $s3, 0, vertical_south_GET_PILL_ADDRESS
+    beq $s3, 1, horizontal_west_GET_PILL_ADDRESS
+    beq $s3, 2, vertical_north_GET_PILL_ADDRESS
+    beq $s3, 3, horizontal_east_GET_PILL_ADDRESS
+
+    vertical_south_GET_PILL_ADDRESS:
+        addi $a0, $a0, 1
+        jal GET_CELL_IN_ARRAY
+        j end_GET_PILL_ADDRESS
+
+    horizontal_west_GET_PILL_ADDRESS:
+        addi $a1, $a1, -1
+        jal GET_CELL_IN_ARRAY
+        j end_GET_PILL_ADDRESS
+
+    vertical_north_GET_PILL_ADDRESS:
+        addi $a0, $a0, -1
+        jal GET_CELL_IN_ARRAY
+        j end_GET_PILL_ADDRESS
+
+    horizontal_east_GET_PILL_ADDRESS:
+        addi $a1, $a1, 1
+        jal GET_CELL_IN_ARRAY
+        j end_GET_PILL_ADDRESS
+
+    end_GET_PILL_ADDRESS:
+        lw $ra, 0($sp)       # Restore return address
+        addi $sp, $sp, 4     # Restore stack pointer
+        jr $ra               # Return from function
           
     HANDLE_MOVE_RIGHT:
-        li $a0, 0
+        jal GET_PILL_ADDRESSES
+        
+        move $a0 $v0
+        move $a1 $v1
+        jal detect_right
+	    bne $v0 $zero end_CHECK_KEYBOARD_INPUT
+	    
+	    li $a0, 0
         li $a1, 1
         jal UPDATE_CURRENT_PILL
         jal PAINT_DISPLAY
@@ -773,3 +828,86 @@ FIND_BOTTOM:
         jr $ra               # Return from function
     
 END_MAIN:
+
+
+
+detect_left:
+add $a1 $a1 4
+add $a0 $a0 4
+add $v0 $zero $zero
+addi $t9 $zero -32 # Encodes the direction
+addi $a1 $a1 32
+beq $a0 $a1 detect_case_a
+addi $a1 $a1 -64
+beq $a0 $a1 detect_case_b
+addi $a1 $a1 32
+j detect_case_c
+
+detect_right:
+add $a1 $a1 4
+add $a0 $a0 4
+add $v0 $zero $zero
+addi $t9 $zero 32
+addi $a1 $a1 32
+beq $a0 $a1 detect_case_b
+addi $a1 $a1 -64
+beq $a0 $a1 detect_case_a
+addi $a1 $a1 32
+j detect_case_c
+
+detect_case_a: # We check the half stored in $s4
+add $a1 $a1 $t9 # Reset after we shifted it to check the condition
+add $a1 $a1 $t9 # Check one block in direction t7
+
+lw $t8 0($a1)
+mult $t9 $t9 -1
+add $a1 $a1 $t9
+beq $t8 0x010100 chain_return
+addi $v0 $v0 1
+jr $ra
+
+detect_case_b: # We check the half stored in $s3
+sub $a1 $a1 $t9
+add $a0 $a0 $t9
+lw $t8 0($a0)
+mult $t9 $t9 -1
+add $a0 $a0 $t9
+beq $t8 0x010100 chain_return
+addi $v0 $v0 1
+jr $ra
+
+detect_case_c: # We need to check both halves of the capsule
+add $a0 $a0 $t9
+lw $t8 0($a0)
+sub $a0 $a0 $t9
+sub $a1 $a1 $t9
+beq $t8 0x010100 detect_case_a # In the case nothing is found after checking $s3
+add $a1 $a1 $t9
+addi $v0 $v0 1 # Immediate failure if we cannnot shift $s3
+jr $ra
+
+chain_return:
+jr $ra
+
+falling_block:
+# Requires t8, t9
+addi $t9 $zero 0
+addi $a0 $a1 0
+jal detect_fall
+addi $a0 $a2 0
+jal detect_fall
+# beq $t9, 1, post_fall
+# beq $t9 2 post_fall
+# j fall
+
+detect_fall:
+
+mult $a3 $a3 32 # a3
+add $a0 $a0 $a3 # Store address of one block below in a0
+lw $t8 0($a0) # Store value of one block below in t8
+bne $t8 0x010100 finish_detect_fall # If there is no block below, do nothing
+beq $a0 $a1 finish_detect_fall # If one half falls onto the other half, it is ok
+beq $a0 $a2 finish_detect_fall
+addi $t9 $t9 1
+finish_detect_fall:
+jr $ra
