@@ -41,7 +41,7 @@ displayaddress:     .word       0x10008000   # Base address for the display
 grid_addresses:     .word       0x11000000   # Base address for the grid cell addresses
 
 # NUMERICAL VALUES
-width:              .word       64           # Width of the display (64 pixels)
+width:              .word       128           # Width of the display (64 pixels)
 height:             .word       64           # Height of the display (64 pixels)
 
 # COORDINATES
@@ -75,11 +75,13 @@ main:
     
 game_loop:
     # 1a. Check if key has been pressed
+    
     # 1b. Check which key has been pressed
+
     # 2a. Check for collisions
 	
 	# 2b. Update locations (capsules)
-	jal UPDATE_GRID
+	
 	
 	# 3. Draw the screen
 	jal PAINT_DISPLAY
@@ -651,7 +653,9 @@ SLEEP1000:
         addi $t9, $t9, 1
         li $t8, 100
         bne $t9, $t8, SLEEP_LOOP
-        
+    
+    jal UPDATE_GRID
+
     lw $ra, 0($sp)       # Restore return address
     addi $sp, $sp, 4     # Restore stack pointer   
     jr $ra
