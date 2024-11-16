@@ -589,6 +589,48 @@ GET_CELL_ON_DISPLAY:
     lw $v0, 0($a0)
     jr $ra
 
+
+GET_PILL_ADDRESSES:
+ 
+    addi $sp, $sp, -4        # Allocate space on the stack
+    sw $ra, 0($sp)           # Save return address
+
+    move $a0, $s1
+    move $a1, $s2
+    jal GET_CELL_IN_ARRAY
+    move $v1, $v0
+
+    beq $s3, 0, vertical_south_GET_PILL_ADDRESS
+    beq $s3, 1, horizontal_west_GET_PILL_ADDRESS
+    beq $s3, 2, vertical_north_GET_PILL_ADDRESS
+    beq $s3, 3, horizontal_east_GET_PILL_ADDRESS
+
+    vertical_south_GET_PILL_ADDRESS:
+        addi $a0, $a0, 1
+        jal GET_CELL_IN_ARRAY
+        j end_GET_PILL_ADDRESS
+
+    horizontal_west_GET_PILL_ADDRESS:
+        addi $a1, $a1, -1
+        jal GET_CELL_IN_ARRAY
+        j end_GET_PILL_ADDRESS
+
+    vertical_north_GET_PILL_ADDRESS:
+        addi $a0, $a0, -1
+        jal GET_CELL_IN_ARRAY
+        j end_GET_PILL_ADDRESS
+
+    horizontal_east_GET_PILL_ADDRESS:
+        addi $a1, $a1, 1
+        jal GET_CELL_IN_ARRAY
+        j end_GET_PILL_ADDRESS
+
+    end_GET_PILL_ADDRESS:
+        lw $ra, 0($sp)       # Restore return address
+        addi $sp, $sp, 4     # Restore stack pointer
+        jr $ra               # Return from function
+
+
 UPDATE_CURRENT_PILL:
     
     addi $sp, $sp, -4        # Allocate space on the stack
@@ -626,6 +668,10 @@ UPDATE_CURRENT_PILL:
 UPDATE_GRID:
     addi $sp, $sp, -4        # Allocate space on the stack
     sw $ra, 0($sp)           # Save return address
+    jal GET_PILL_ADDRESSES
+    move $a1 $v0
+    move $a2 $v1
+    jal falling_block
     
     li $a0, 1
     li $a1, 0
@@ -651,8 +697,9 @@ SLEEP1000:
         addi $t9, $t9, 1
         li $t8, 100
         bne $t9, $t8, SLEEP_LOOP
-   
+    
     jal UPDATE_GRID
+    NO_UPDATE:
     lw $ra, 0($sp)       # Restore return address
     addi $sp, $sp, 4     # Restore stack pointer   
     jr $ra
@@ -693,46 +740,6 @@ CHECK_KEYBOARD_INPUT:
         jal PAINT_DISPLAY
         
         j end_CHECK_KEYBOARD_INPUT
-        
-   GET_PILL_ADDRESSES:
- 
-    addi $sp, $sp, -4        # Allocate space on the stack
-    sw $ra, 0($sp)           # Save return address
-
-    move $a0, $s1
-    move $a1, $s2
-    jal GET_CELL_IN_ARRAY
-    move $v1, $v0
-
-    beq $s3, 0, vertical_south_GET_PILL_ADDRESS
-    beq $s3, 1, horizontal_west_GET_PILL_ADDRESS
-    beq $s3, 2, vertical_north_GET_PILL_ADDRESS
-    beq $s3, 3, horizontal_east_GET_PILL_ADDRESS
-
-    vertical_south_GET_PILL_ADDRESS:
-        addi $a0, $a0, 1
-        jal GET_CELL_IN_ARRAY
-        j end_GET_PILL_ADDRESS
-
-    horizontal_west_GET_PILL_ADDRESS:
-        addi $a1, $a1, -1
-        jal GET_CELL_IN_ARRAY
-        j end_GET_PILL_ADDRESS
-
-    vertical_north_GET_PILL_ADDRESS:
-        addi $a0, $a0, -1
-        jal GET_CELL_IN_ARRAY
-        j end_GET_PILL_ADDRESS
-
-    horizontal_east_GET_PILL_ADDRESS:
-        addi $a1, $a1, 1
-        jal GET_CELL_IN_ARRAY
-        j end_GET_PILL_ADDRESS
-
-    end_GET_PILL_ADDRESS:
-        lw $ra, 0($sp)       # Restore return address
-        addi $sp, $sp, 4     # Restore stack pointer
-        jr $ra               # Return from function
           
     HANDLE_MOVE_RIGHT:
         jal GET_PILL_ADDRESSES
@@ -776,7 +783,7 @@ CHECK_KEYBOARD_INPUT:
             li $a1, 0
             jal UPDATE_CURRENT_PILL
             jal PAINT_DISPLAY
-            
+         
         j end_CHECK_KEYBOARD_INPUT
             
     end_CHECK_KEYBOARD_INPUT:
@@ -835,7 +842,7 @@ detect_left:
 add $a1 $a1 4
 add $a0 $a0 4
 add $v0 $zero $zero
-addi $t9 $zero -32 # Encodes the direction
+addi $t6 $zero -32 # Encodes the direction
 addi $a1 $a1 32
 beq $a0 $a1 detect_case_a
 addi $a1 $a1 -64
@@ -847,7 +854,7 @@ detect_right:
 add $a1 $a1 4
 add $a0 $a0 4
 add $v0 $zero $zero
-addi $t9 $zero 32
+addi $t6 $zero 32
 addi $a1 $a1 32
 beq $a0 $a1 detect_case_b
 addi $a1 $a1 -64
@@ -856,33 +863,33 @@ addi $a1 $a1 32
 j detect_case_c
 
 detect_case_a: # We check the half stored in $s4
-add $a1 $a1 $t9 # Reset after we shifted it to check the condition
-add $a1 $a1 $t9 # Check one block in direction t7
+add $a1 $a1 $t6 # Reset after we shifted it to check the condition
+add $a1 $a1 $t6 # Check one block in direction t7
 
-lw $t8 0($a1)
-mult $t9 $t9 -1
-add $a1 $a1 $t9
-beq $t8 0x010100 chain_return
+lw $t5 0($a1)
+mult $t6 $t6 -1
+add $a1 $a1 $t6
+beq $t5 0x010100 chain_return
 addi $v0 $v0 1
 jr $ra
 
 detect_case_b: # We check the half stored in $s3
-sub $a1 $a1 $t9
-add $a0 $a0 $t9
-lw $t8 0($a0)
-mult $t9 $t9 -1
-add $a0 $a0 $t9
-beq $t8 0x010100 chain_return
+sub $a1 $a1 $t6
+add $a0 $a0 $t6
+lw $t5 0($a0)
+mult $t6 $t6 -1
+add $a0 $a0 $t6
+beq $t5 0x010100 chain_return
 addi $v0 $v0 1
 jr $ra
 
 detect_case_c: # We need to check both halves of the capsule
-add $a0 $a0 $t9
-lw $t8 0($a0)
-sub $a0 $a0 $t9
-sub $a1 $a1 $t9
-beq $t8 0x010100 detect_case_a # In the case nothing is found after checking $s3
-add $a1 $a1 $t9
+add $a0 $a0 $t6
+lw $t5 0($a0)
+sub $a0 $a0 $t6
+sub $a1 $a1 $t6
+beq $t5 0x010100 detect_case_a # In the case nothing is found after checking $s3
+add $a1 $a1 $t6
 addi $v0 $v0 1 # Immediate failure if we cannnot shift $s3
 jr $ra
 
@@ -890,22 +897,39 @@ chain_return:
 jr $ra
 
 falling_block:
+
+addi $sp, $sp, -4        # Allocate space on the stack
+sw $ra, 0($sp)           # Save return address
+addi $a1 $a1 4
+addi $a2 $a2 4
+
 # Requires t8, t9
 addi $t9 $zero 0
 addi $a0 $a1 0
 jal detect_fall
 addi $a0 $a2 0
 jal detect_fall
-# beq $t9, 1, post_fall
-# beq $t9 2 post_fall
-# j fall
+
+beq $t9, 1, PREP_NO_UPDATE
+beq $t9 2 PREP_NO_UPDATE
+
+lw $ra, 0($sp)                  # Load saved $ra
+addi $sp, $sp, 4                # Restore stack pointer
+jr $ra
+
+PREP_NO_UPDATE:
+lw $ra, 0($sp)                  # Load saved $ra
+addi $sp, $sp, 4                # Restore stack pointer
+lw $ra, 0($sp)                  # Load saved $ra
+addi $sp, $sp, 4                # Restore stack pointer
+j NO_UPDATE
 
 detect_fall:
-
-mult $a3 $a3 32 # a3
+lw $a3, width
+mult $a3 $a3 16 # Divide by 2, multiply by 32
 add $a0 $a0 $a3 # Store address of one block below in a0
 lw $t8 0($a0) # Store value of one block below in t8
-bne $t8 0x010100 finish_detect_fall # If there is no block below, do nothing
+beq $t8 0x010100 finish_detect_fall # If there is no block below, do nothing
 beq $a0 $a1 finish_detect_fall # If one half falls onto the other half, it is ok
 beq $a0 $a2 finish_detect_fall
 addi $t9 $t9 1
