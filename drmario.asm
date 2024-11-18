@@ -638,9 +638,12 @@ UPDATE_CURRENT_PILL:
     
     move $t3, $a0
     move $t4, $a1
+    move $t5, $a2
     
+    prev_state_stored:
     move $a0, $s1
     move $a1, $s2
+    move $a2, $t5
     jal EXTRACT_CURRENT_PILL_COLOR
     move $t1, $v0
     move $t2, $v1
@@ -675,6 +678,7 @@ UPDATE_GRID:
     
     li $a0, 1
     li $a1, 0
+    move $a2, $s3
     jal UPDATE_CURRENT_PILL
 
     lw $ra, 0($sp)       # Restore return address
@@ -720,6 +724,7 @@ CHECK_KEYBOARD_INPUT:
         beq $t2, 0x61, HANDLE_MOVE_LEFT
         beq $t2, 0x73, HANDLE_DROP
         beq $t2, 0x64, HANDLE_MOVE_RIGHT
+        j end_CHECK_KEYBOARD_INPUT
     
     HANDLE_QUIT:
         jal INIT
@@ -727,8 +732,7 @@ CHECK_KEYBOARD_INPUT:
         j END_MAIN
     
     HANDLE_MOVE_LEFT:
-    jal GET_PILL_ADDRESSES
-        
+        jal GET_PILL_ADDRESSES  
         move $a0 $v0
         move $a1 $v1
         jal detect_left
@@ -736,6 +740,7 @@ CHECK_KEYBOARD_INPUT:
     
         li $a0, 0
         li $a1, -1
+        move $a2, $s3
         jal UPDATE_CURRENT_PILL
         jal PAINT_DISPLAY
         
@@ -743,7 +748,6 @@ CHECK_KEYBOARD_INPUT:
           
     HANDLE_MOVE_RIGHT:
         jal GET_PILL_ADDRESSES
-        
         move $a0 $v0
         move $a1 $v1
         jal detect_right
@@ -751,17 +755,36 @@ CHECK_KEYBOARD_INPUT:
 	    
 	    li $a0, 0
         li $a1, 1
+        move $a2, $s3
         jal UPDATE_CURRENT_PILL
         jal PAINT_DISPLAY
 
         j end_CHECK_KEYBOARD_INPUT
         
     HANDLE_ROTATE:
+        jal GET_PILL_ADDRESSES  
+        move $a0 $v0
+        move $a1 $v1
+        jal detect_left
+        bne $s3, 0, left_border_rotation_clear
+	    bne $v0 $zero end_CHECK_KEYBOARD_INPUT
+	    left_border_rotation_clear:
+	    
+	    jal GET_PILL_ADDRESSES
+        move $a0 $v0
+        move $a1 $v1
+        jal detect_right
+        bne $s3, 2, right_border_rotation_clear
+	    bne $v0 $zero end_CHECK_KEYBOARD_INPUT
+	    right_border_rotation_clear:
+    
         move $a2, $s3
         addi $s3, $s3, 1
         bne $s3, 4, continue_HANDLE_ROTATE
         li $s3, 0
+        
         continue_HANDLE_ROTATE:
+        
         li $a0, 0
         li $a1, 0
         jal UPDATE_CURRENT_PILL
@@ -781,6 +804,7 @@ CHECK_KEYBOARD_INPUT:
         offset_calculated_HANDLE_DROP:
             move $a0, $t9
             li $a1, 0
+            move $a2, $s3
             jal UPDATE_CURRENT_PILL
             jal PAINT_DISPLAY
          
@@ -922,6 +946,9 @@ lw $ra, 0($sp)                  # Load saved $ra
 addi $sp, $sp, 4                # Restore stack pointer
 lw $ra, 0($sp)                  # Load saved $ra
 addi $sp, $sp, 4                # Restore stack pointer
+j post_fall
+
+PREP_DRAW_PILL:
 jal DRAW_NEW_PILL
 lw $s1 initial_pill_row
 lw $s2 initial_pill_col
@@ -939,3 +966,157 @@ beq $a0 $a2 finish_detect_fall
 addi $t9 $t9 1
 finish_detect_fall:
 jr $ra
+
+
+
+
+delete_block: # Deletes t9 blocks
+addi $sp, $sp, -4        # Allocate space on the stack
+sw $ra, 0($sp)           # Save return address
+
+mult $t7 $t7 -1 # Changes the direction
+j delete_block_down
+delete_block_iterate:
+add $s5 $s5 $t7 # Changes the pixel being deleted
+
+move $t5 $t7
+move $a0 $s5
+li $s7 0x010100
+sw $s7 0($s5)
+move $t7 $t5
+
+jal chain_fall
+addi $t9 $t9 -1 # Decrease the counter
+beq $t9 $zero delete_return # If the counter is 0 we switch to the next instruction
+j delete_block_iterate # Otherwise we continue the loop
+
+delete_block_down:
+bge $t7 -32 delete_block_iterate
+mult $t6 $t9 $t7
+add $t6 $t6 $t7
+mult $t7 $t7 -1
+add $s5 $s5 $t6
+j delete_block_iterate
+
+delete_return:
+lw $ra, 0($sp)                  # Load saved $ra
+addi $sp, $sp, 4                # Restore stack pointer
+jr $ra
+
+# Lines 106-179 search for chains to delete
+
+post_fall:
+
+jal GET_PILL_ADDRESSES
+addi $v0 $v0 4
+addi $v1 $v1 4
+lw $t3 0($v0)
+
+skip_left_3:
+move $s5 $v0
+li $t9 1 # Sets counter t9 to 1
+li $t7 -32 # Pills are -32 apart
+
+left_loop_3:
+add $s5 $s5 $t7
+lw $t8 0($s5)
+bne $t8 $t3 skip_right_3 # If the chain ends, check a different direction
+addi $t9 $t9 1
+j left_loop_3
+
+skip_right_3:
+blt $t9 4 skip_right_3b
+jal delete_block
+skip_right_3b:
+move $s5 $v0 # Reset s5
+li $t9 1 # Sets counter t9 to 1
+li $t7 32 # Pills are 32 apart
+
+right_loop_3:
+add $s5 $s5 $t7
+lw $t8 0($s5)
+bne $t8 $t3 skip_down_3
+addi $t9 $t9 1
+j right_loop_3
+
+skip_down_3:
+blt $t9 4 skip_down_3b
+jal delete_block
+skip_down_3b:
+move $s5 $v0 # Reset s5
+li $t9 1 # Sets counter t9 to 1
+lw $t7 width
+mult $t7 $t7 16
+
+down_loop_3:
+add $s5 $s5 $t7
+lw $t8 0($s5)
+bne $t8 $t3 skip_left_4
+addi $t9 $t9 1
+j down_loop_3
+
+skip_left_4:
+blt $t9 4 skip_left_4b
+jal delete_block
+skip_left_4b:
+lw $t3 0($v1)
+move $s5 $v1 # Reset s5
+li $t9 1 # Sets counter t9 to 1
+li $t7 -32 # Pills are -32 apart
+
+left_loop_4:
+add $s5 $s5 $t7
+lw $t8 0($s5)
+bne $t8 $t3 skip_right_4 # If the chain ends, check a different direction
+addi $t9 $t9 1
+j left_loop_4
+
+skip_right_4:
+blt $t9 4 skip_right_4b
+jal delete_block
+skip_right_4b:
+move $s5 $v1 # Reset s5
+li $t9 1 # Sets counter t9 to 1
+li $t7 32 # Pills are 32 apart
+right_loop_4:
+add $s5 $s5 $t7
+lw $t8 0($s5)
+bne $t8 $t3 skip_down_4
+addi $t9 $t9 1
+j right_loop_4
+
+skip_down_4:
+blt $t9 4 skip_down_4b
+jal delete_block
+skip_down_4b:
+move $s5 $v1 # Reset s5
+li $t9 1 # Sets counter t9 to 1
+lw $t7 width
+mult $t7 $t7 16
+
+down_loop_4:
+add $s5 $s5 $t7
+lw $t8 0($s5)
+bne $t8 $t3 finish_deletion
+addi $t9 $t9 1
+j down_loop_4
+
+finish_deletion:
+blt $t9 4 PREP_DRAW_PILL
+jal delete_block
+j PREP_DRAW_PILL
+
+chain_fall:
+move $s7 $s5
+chain_fall_iterate:
+lw $t6 width
+mult $t6 $t6 16
+sub $s7 $s7 $t6
+lw $t8 0($s7) # Load colour of capsule to drop
+li $s6 0x010100
+sw $s6 0($s7)
+beq $t8 0x010100 chain_return # Exit if there is no capsule
+add $s7 $s7 $t6 # Decrease capsule height by 1
+sw $t8 0($s7) # 
+sub $s7 $s7 $t6
+j chain_fall_iterate
