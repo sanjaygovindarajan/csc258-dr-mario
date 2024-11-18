@@ -54,6 +54,9 @@ red:                .word       0xfa26a0     # RGB color code for red
 yellow:             .word       0xf8d210     # RGB color code for yellow
 blue:               .word       0x2ff3e0     # RGB color code for blue
 rosewater:          .word       0xffc2c7     # RGB color code for rosewater (light pink)
+aqua:               .word       0x99ffff
+bright_red:         .word       0xff99dd
+bright_yellow:      .word       0xffffdd
 
 
 
@@ -106,7 +109,7 @@ INIT:
     DRAW_VIRUSES:
     jal DRAW_VIRUS
     subi $t8 $t8 1
-    bgez $t8 DRAW_VIRUSES
+    bgtz $t8 DRAW_VIRUSES
     
     lw $ra, 0($sp)                  # Load saved $ra
     addi $sp, $sp, 4                # Restore stack pointer
@@ -530,6 +533,16 @@ DRAW_NEW_PILL:
     addi $sp, $sp, 4     # Restore stack pointer
     jr $ra  
 
+draw_yellow_virus:
+lw $s7 bright_yellow
+j set_color
+draw_red_virus:
+lw $s7 bright_red
+j set_color
+draw_blue_virus:
+lw $s7 aqua
+j set_color
+
 DRAW_VIRUS:
     addi $sp, $sp, -4        # Allocate space on the stack
     sw $ra, 0($sp)           # Save return address
@@ -546,9 +559,11 @@ DRAW_VIRUS:
     move $s6, $v0
     
     sw $s6 4($t9)
-    li $s7 0xffffff
-    sub $s6 $s6 $s7
-    div $s6 $s6 2
+    beq $s6 0xf8d210 draw_yellow_virus
+    beq $s6 0xfa26a0 draw_red_virus
+    beq $s6 0x2ff3e0 draw_blue_virus
+    set_color:
+    sub $s6 $s7 $s6
     sw $s6 8($t9)
     
     lw $ra, 0($sp)       # Restore return address
@@ -563,14 +578,14 @@ RANDOM_POSITION:
     li $a0, 0               # Lower bound for the random number
     li $a1, 19              # Upper bound (exclusive)
     syscall                 # Make syscall to generate random number
-    addi $s6 $v0 4
+    addi $s6 $a0 3
     
     li $v0, 42              # Load syscall code for random number generation
     li $a0, 0               # Lower bound for the random number
     li $a1, 23              # Upper bound (exclusive)
     syscall                 # Make syscall to generate random number
-    addi $v1 $v0 7
-    move $v0 $s6
+    addi $v0 $a0 6
+    move $v1 $s6
     
     lw $ra, 0($sp)       # Restore return address
     addi $sp, $sp, 4     # Restore stack pointer
@@ -1042,6 +1057,7 @@ move $t5 $t7
 move $a0 $s5
 li $s7 0x010100
 sw $s7 0($s5)
+sw $zero 4($s5)
 move $t7 $t5
 
 jal chain_fall
