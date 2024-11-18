@@ -102,6 +102,12 @@ INIT:
     jal DRAW_BOTTLE                 # Draw the bottle
     jal DRAW_NEW_PILL
     
+    li $t8 4
+    DRAW_VIRUSES:
+    jal DRAW_VIRUS
+    subi $t8 $t8 1
+    bgez $t8 DRAW_VIRUSES
+    
     lw $ra, 0($sp)                  # Load saved $ra
     addi $sp, $sp, 4                # Restore stack pointer
     jr $ra                          # Return from main
@@ -144,7 +150,8 @@ INITIALIZE_GRID:
             # Store the calculated address in the grid_addresses array
             sw $v0, 0($t2)             # Store the address in the array
             lw $t6, black
-            sw $t6, 4($t2)             # Store the address in the array
+            sw $t6, 4($t2)             # Store the color in the array
+            sw $zero, 8($t2)           # Store that it is not a virus
             
             addi $t2, $t2, 32           # Move to the next array index (each address is 4 bytes)
             addi $t4, $t4, 1           # Increment column index (j++)
@@ -499,8 +506,7 @@ EXTRACT_CURRENT_PILL_COLOR:
         lw $ra, 0($sp)       # Restore return address
         addi $sp, $sp, 4     # Restore stack pointer
         jr $ra               # Return from function
-  
-    
+
 DRAW_NEW_PILL:
 
     addi $sp, $sp, -4        # Allocate space on the stack
@@ -508,6 +514,10 @@ DRAW_NEW_PILL:
     
     lw $a0, initial_pill_row        # Draw the initial pill at the specified position
     lw $a1, initial_pill_col
+    jal GET_CELL_IN_ARRAY
+    lw $s6 4($v0)
+    bne $s6 0x010100 GAME_OVER
+    
     li $a2, 0
     jal RANDOM_COLOR
     move $s6, $v0
@@ -519,7 +529,52 @@ DRAW_NEW_PILL:
     lw $ra, 0($sp)       # Restore return address
     addi $sp, $sp, 4     # Restore stack pointer
     jr $ra  
+
+DRAW_VIRUS:
+    addi $sp, $sp, -4        # Allocate space on the stack
+    sw $ra, 0($sp)           # Save return address
     
+    jal RANDOM_POSITION
+    
+    move $a0, $v0        # Draw the initial pill at the specified position
+    move $a1, $v1
+    jal GET_CELL_IN_ARRAY
+    move $t9 $v0
+    
+    li $a2, 0
+    jal RANDOM_COLOR
+    move $s6, $v0
+    
+    sw $s6 4($t9)
+    li $s7 0xffffff
+    sub $s6 $s6 $s7
+    div $s6 $s6 2
+    sw $s6 8($t9)
+    
+    lw $ra, 0($sp)       # Restore return address
+    addi $sp, $sp, 4     # Restore stack pointer
+    jr $ra  
+    
+RANDOM_POSITION:
+    addi $sp, $sp, -4        # Allocate space on the stack
+    sw $ra, 0($sp)           # Save return address
+
+    li $v0, 42              # Load syscall code for random number generation
+    li $a0, 0               # Lower bound for the random number
+    li $a1, 19              # Upper bound (exclusive)
+    syscall                 # Make syscall to generate random number
+    addi $s6 $v0 4
+    
+    li $v0, 42              # Load syscall code for random number generation
+    li $a0, 0               # Lower bound for the random number
+    li $a1, 23              # Upper bound (exclusive)
+    syscall                 # Make syscall to generate random number
+    addi $v1 $v0 7
+    move $v0 $s6
+    
+    lw $ra, 0($sp)       # Restore return address
+    addi $sp, $sp, 4     # Restore stack pointer
+    jr $ra
     
 PAINT_DISPLAY:
     addi $sp, $sp, -4        # Allocate space on the stack
@@ -545,6 +600,10 @@ PAINT_DISPLAY:
             move $a0, $t0
             jal GET_CELL_ON_DISPLAY     # GetCell(row, col) stored in $v0
             lw $s7, 4($t0)              # load color
+            
+            # Untested
+            lw $s6, 8($t0)
+            add $s7, $s6, $s7
             
             # Store the calculated address in the grid_addresses array
             sw $s7, 0($v0)                 # Store the address in the array
@@ -1108,15 +1167,36 @@ j PREP_DRAW_PILL
 
 chain_fall:
 move $s7 $s5
+
 chain_fall_iterate:
+li $t5 0
 lw $t6 width
 mult $t6 $t6 16
-sub $s7 $s7 $t6
+
+repeat_fall:
+addi $t5 $t5 1 # Counts the number of spaces fallen
+sub $s7 $s7 $t6 # At this point s7 is the capsule to drop
 lw $t8 0($s7) # Load colour of capsule to drop
 li $s6 0x010100
-sw $s6 0($s7)
+
 beq $t8 0x010100 chain_return # Exit if there is no capsule
-add $s7 $s7 $t6 # Decrease capsule height by 1
-sw $t8 0($s7) # 
+# Viruses cannot fall
+lw $t8 4($s7)
+bne $t8 $zero chain_return
+lw $t8 0($s7)
+
+sw $s6 0($s7)
+add $s7 $s7 $t6 # s7 is one below the capsule to drop
+sw $t8 0($s7) #
+
+add $s7 $s7 $t6 # s7 is one below the place we just dropped to
+lw $t8 0($s7)
+
+beq $t8 0x010100 repeat_fall
+sub $s7 $s7 $t6
+mult $t6 $t6 $t5
+
 sub $s7 $s7 $t6
 j chain_fall_iterate
+
+GAME_OVER:
