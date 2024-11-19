@@ -951,7 +951,7 @@ bright_yellow:      .word       0xffffdd
     beq $t8 0x010100 chain_return # Exit if there is no capsule
     lw $s6 rosewater
     beq $t8 $s6 chain_return # Fix bug where the wall can fall
-    lw $s6 0x010100
+    li $s6 0x010100
     # Viruses cannot fall
     lw $t8 4($s7)
     bne $t8 $zero chain_return
