@@ -952,7 +952,7 @@ bright_yellow:      .word       0xffffdd
     lw $s6 rosewater
     beq $t8 $s6 chain_return # Fix bug where the wall can fall
     li $s6 0x010100
-    # Viruses cannot fall
+    # Viruses cannot fallw
     lw $t8 4($s7)
     bne $t8 $zero chain_return
     lw $t8 0($s7)
@@ -1150,6 +1150,7 @@ bright_yellow:      .word       0xffffdd
             bne $t3, $t4, exit_BOTTOM_SEARCH_LOOP
             addi $t1, $t1, 1
             bne $t1, 29, BOTTOM_SEARCH_LOOP
+            j exit_BOTTOM_SEARCH_LOOP
             
         find_bottom_east:
         
@@ -1162,6 +1163,7 @@ bright_yellow:      .word       0xffffdd
             bne $t3, $t4, exit_BOTTOM_SEARCH_LOOP
             addi $t1, $t1, 1
             bne $t1, 29, BOTTOM_SEARCH_LOOP
+            j exit_BOTTOM_SEARCH_LOOP
 
 
 
