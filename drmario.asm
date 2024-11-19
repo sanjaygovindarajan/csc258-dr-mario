@@ -847,9 +847,25 @@ bright_yellow:      .word       0xffffdd
     down_loop_3:
     add $s5 $s5 $t7
     lw $t8 0($s5)
-    bne $t8 $t3 skip_left_4
+    bne $t8 $t3 skip_up_3
     addi $t9 $t9 1
     j down_loop_3
+    
+    skip_up_3:
+    # blt $t9 4 skip_up_3b
+    # jal delete_block
+    skip_up_3b:
+    move $s5 $v0 # Reset s5
+    # li $t9 1 # Sets counter t9 to 1
+    lw $t7 width
+    mult $t7 $t7 -16
+
+    up_loop_3:
+    add $s5 $s5 $t7
+    lw $t8 0($s5)
+    bne $t8 $t3 skip_left_4
+    addi $t9 $t9 1
+    j up_loop_3
 
     skip_left_4:
     blt $t9 4 skip_left_4b
@@ -893,9 +909,25 @@ bright_yellow:      .word       0xffffdd
     down_loop_4:
     add $s5 $s5 $t7
     lw $t8 0($s5)
-    bne $t8 $t3 finish_deletion
+    bne $t8 $t3 skip_up_4
     addi $t9 $t9 1
     j down_loop_4
+    
+    skip_up_4:
+    # blt $t9 4 skip_up_3b
+    # jal delete_block
+    skip_up_4b:
+    move $s5 $v1 # Reset s5
+    # li $t9 1 # Sets counter t9 to 1
+    lw $t7 width
+    mult $t7 $t7 -16
+
+    up_loop_4:
+    add $s5 $s5 $t7
+    lw $t8 0($s5)
+    bne $t8 $t3 finish_deletion
+    addi $t9 $t9 1
+    j up_loop_4
 
     finish_deletion:
     blt $t9 4 PREP_DRAW_PILL
@@ -917,6 +949,8 @@ bright_yellow:      .word       0xffffdd
     li $s6 0x010100
 
     beq $t8 0x010100 chain_return # Exit if there is no capsule
+    lw $s6 rosewater
+    beq $t8 $s6 chain_return # Fix bug where the wall can fall
     # Viruses cannot fall
     lw $t8 4($s7)
     bne $t8 $zero chain_return
