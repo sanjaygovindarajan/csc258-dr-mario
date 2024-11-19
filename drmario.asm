@@ -821,11 +821,11 @@ bright_yellow:      .word       0xffffdd
     j left_loop_3
 
     skip_right_3:
-    blt $t9 4 skip_right_3b
-    jal delete_block
+    # blt $t9 4 skip_right_3b
+    # jal delete_block
     skip_right_3b:
     move $s5 $v0 # Reset s5
-    li $t9 1 # Sets counter t9 to 1
+    # li $t9 1 # Sets counter t9 to 1
     li $t7 32 # Pills are 32 apart
 
     right_loop_3:
@@ -847,9 +847,25 @@ bright_yellow:      .word       0xffffdd
     down_loop_3:
     add $s5 $s5 $t7
     lw $t8 0($s5)
-    bne $t8 $t3 skip_left_4
+    bne $t8 $t3 skip_up_3
     addi $t9 $t9 1
     j down_loop_3
+    
+    skip_up_3:
+    # blt $t9 4 skip_up_3b
+    # jal delete_block
+    skip_up_3b:
+    move $s5 $v0 # Reset s5
+    # li $t9 1 # Sets counter t9 to 1
+    lw $t7 width
+    mult $t7 $t7 -16
+
+    up_loop_3:
+    add $s5 $s5 $t7
+    lw $t8 0($s5)
+    bne $t8 $t3 skip_left_4
+    addi $t9 $t9 1
+    j up_loop_3
 
     skip_left_4:
     blt $t9 4 skip_left_4b
@@ -868,11 +884,11 @@ bright_yellow:      .word       0xffffdd
     j left_loop_4
 
     skip_right_4:
-    blt $t9 4 skip_right_4b
-    jal delete_block
+    # blt $t9 4 skip_right_4b
+    # jal delete_block
     skip_right_4b:
     move $s5 $v1 # Reset s5
-    li $t9 1 # Sets counter t9 to 1
+    # li $t9 1 # Sets counter t9 to 1
     li $t7 32 # Pills are 32 apart
     right_loop_4:
     add $s5 $s5 $t7
@@ -893,9 +909,25 @@ bright_yellow:      .word       0xffffdd
     down_loop_4:
     add $s5 $s5 $t7
     lw $t8 0($s5)
-    bne $t8 $t3 finish_deletion
+    bne $t8 $t3 skip_up_4
     addi $t9 $t9 1
     j down_loop_4
+    
+    skip_up_4:
+    # blt $t9 4 skip_up_3b
+    # jal delete_block
+    skip_up_4b:
+    move $s5 $v1 # Reset s5
+    # li $t9 1 # Sets counter t9 to 1
+    lw $t7 width
+    mult $t7 $t7 -16
+
+    up_loop_4:
+    add $s5 $s5 $t7
+    lw $t8 0($s5)
+    bne $t8 $t3 finish_deletion
+    addi $t9 $t9 1
+    j up_loop_4
 
     finish_deletion:
     blt $t9 4 PREP_DRAW_PILL
@@ -917,7 +949,10 @@ bright_yellow:      .word       0xffffdd
     li $s6 0x010100
 
     beq $t8 0x010100 chain_return # Exit if there is no capsule
-    # Viruses cannot fall
+    lw $s6 rosewater
+    beq $t8 $s6 chain_return # Fix bug where the wall can fall
+    li $s6 0x010100
+    # Viruses cannot fallw
     lw $t8 4($s7)
     bne $t8 $zero chain_return
     lw $t8 0($s7)
@@ -1085,6 +1120,10 @@ bright_yellow:      .word       0xffffdd
             lw $t3, 4($v0)
             
             bne $t3, $t4, exit_BOTTOM_SEARCH_LOOP
+            
+            beq $s3 1 find_bottom_west
+            beq $s3 3 find_bottom_east
+            
             addi $t1, $t1, 1
             bne $t1, 29, BOTTOM_SEARCH_LOOP
         
@@ -1099,6 +1138,32 @@ bright_yellow:      .word       0xffffdd
         
         end_FIND_BOTTOM:
             return()
+            
+        find_bottom_west:
+        
+            move $a0, $t1
+            move $a1, $s2
+            addi $a1 $a1 -1
+            jal GET_CELL_GRID_ADDRESS
+            lw $t3, 4($v0)
+            
+            bne $t3, $t4, exit_BOTTOM_SEARCH_LOOP
+            addi $t1, $t1, 1
+            bne $t1, 29, BOTTOM_SEARCH_LOOP
+            j exit_BOTTOM_SEARCH_LOOP
+            
+        find_bottom_east:
+        
+            move $a0, $t1
+            move $a1, $s2
+            addi $a1 $a1 1
+            jal GET_CELL_GRID_ADDRESS
+            lw $t3, 4($v0)
+            
+            bne $t3, $t4, exit_BOTTOM_SEARCH_LOOP
+            addi $t1, $t1, 1
+            bne $t1, 29, BOTTOM_SEARCH_LOOP
+            j exit_BOTTOM_SEARCH_LOOP
 
 
 
