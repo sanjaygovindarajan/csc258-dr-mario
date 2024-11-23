@@ -65,7 +65,7 @@ pill_queue_col:     .word       32
 # COLORS (RGB values)
 black:              .word       0x010100     # RGB color code for black
 red:                .word       0xfa26a0     # RGB color code for red
-yellow:             .word       0xf8d210     # RGB color code for yellow
+yellow:             .word       0xf8d210     # RGB color code for yellowff
 blue:               .word       0x2ff3e0     # RGB color code for blue
 rosewater:          .word       0xffc2c7     # RGB color code for rosewater (light pink)
 white:              .word       0xffffff     # RGB color code for white
@@ -114,6 +114,8 @@ bright_yellow:      .word       0xffffdd
         # 2b. Update locations (capsules)
         jal     LET_CURRENT_PILL_FALL
         NO_UPDATE:
+        
+        jal DRAW_SCORE
 
         # 3. Draw the screen
         jal PAINT_DISPLAY
@@ -159,6 +161,9 @@ bright_yellow:      .word       0xffffdd
         li $s0 3
         lw $s1 gravity_address
         sw $s0 4($s1)
+        li $s0 100
+        sw $s0 12($s1)
+        sw $zero 16($s1)
         return()
 
     INIT:
@@ -168,8 +173,8 @@ bright_yellow:      .word       0xffffdd
         jal INITIALIZE_GAME_GRID
         jal INITIALIZE_MESSAGE_GRID
         
-        li $s0 100
         lw $s1 gravity_address
+        lw $s0 12($s1)
         sw $s0 0($s1)
         
         lw $s0 4($s1)
@@ -992,6 +997,11 @@ bright_yellow:      .word       0xffffdd
     lw $s7 4($s5)
     beq $s7 0 skip_eliminate_virus
     lw $s7 gravity_address
+    
+    lw $t8 16($s7)
+    addi $t8 $t8 1 # Increment score
+    sw $t8 16($s7)
+    
     lw $t8 8($s7)
     subi $t8 $t8 1
     sw $t8 8($s7)
@@ -1225,6 +1235,9 @@ bright_yellow:      .word       0xffffdd
         KEYBOARD_HANDLER:
             
             lw $t2, 4($t0)
+            beq $t2, 0x65, SET_DIFFICULTY_EASY
+            beq $t2, 0x6d, SET_DIFFICULTY_MEDIUM
+            beq $t2, 0x68, SET_DIFFICULTY_HARD
             beq $t2, 0x71, HANDLE_QUIT
             beq $t2, 0x77, HANDLE_ROTATE
             beq $t2, 0x61, HANDLE_MOVE_LEFT
@@ -1233,6 +1246,25 @@ bright_yellow:      .word       0xffffdd
             beq $t2, 0x70, HANDLE_PAUSE
             beq $t2, 0x72, HANDLE_RETRY
             j end_CHECK_KEYBOARD_INPUT
+        
+        SET_DIFFICULTY_EASY:
+        li $t2 100
+        lw $t1 gravity_address
+        sw $t2 12($t1)
+        j end_CHECK_KEYBOARD_INPUT
+        SET_DIFFICULTY_MEDIUM:
+        lw $t1 gravity_address
+        li $t2 50
+        sw $t2 12($t1)
+        li $t9 0
+        j end_CHECK_KEYBOARD_INPUT
+        SET_DIFFICULTY_HARD:
+        lw $t1 gravity_address
+        li $t2 5
+        sw $t2 12($t1)
+        sw $t2 0($t1)
+        li $t9 0
+        j end_CHECK_KEYBOARD_INPUT
         
         HANDLE_QUIT:
             jal INIT
@@ -1805,7 +1837,7 @@ bright_yellow:      .word       0xffffdd
         
         li $v0, 42              # Load syscall code for random number generation
         li $a0, 0               # Lower bound for the random number
-        li $a1, 23              # Upper bound (exclusive)
+        li $a1, 22              # Upper bound (exclusive)
         syscall                 # Make syscall to generate random number
         addi $v0 $a0 9
         move $v1 $s6
@@ -2368,7 +2400,167 @@ LOAD_LETTER_M:
         jal load_letter_value
          
         return()
-    
+        
+        DRAW_SCORE:
+        addstack()
+        lw $a3 game_grid_address
+        lw $t9 width
+        mult $t9 $t9 320
+        add $a3 $a3 $t9
+        li $t9 32
+        mult $t9 $t9 50
+        add $a3 $a3 $t9
+        
+        lw $t9 gravity_address
+        lw $t9 16($t9)
+        li $t6 1
+        draw_num_loop:
+        move $a1 $t6
+        move $a0 $t9
+        jal BASE_CONVERT
+        move $t6 $a1
+        move $a0 $v0
+        jal DRAW_NUM
+        subi $a3 $a3 128
+        mult $v1 $v1 5
+        sub $a3 $a3 $v1
+        blt $t6 1000 draw_num_loop
+        return()
+        
+        BASE_CONVERT:
+        addstack()
+        mult $a1 $a1 10
+        div $v0 $a0 $a1
+        mult $v0 $v0 $a1
+        sub $v0 $a0 $v0
+        div $a1 $a1 10
+        div $v0 $v0 $a1
+        mult $a1 $a1 10
+        return()
+        
+        DRAW_NUM:
+        addstack()
+        li $a1 0
+        lw $v1 width
+        mult $v1 $v1 16
+        y_loop:
+        li $a2 0
+        x_loop:
+        jal FINDPX
+        sw $v0 4($a3)
+        addi $a2 $a2 1
+        addi $a3 $a3 32
+        blt $a2 3 x_loop
+        jal FINDPX
+        addi $a1 $a1 1
+        add $a3 $a3 $v1
+        subi $a3 $a3 96
+        blt $a1 5 y_loop
+        return()
+        
+        FINDPX:
+        addstack()
+        beq $a1 0 FINDPX0
+        beq $a1 1 FINDPX1
+        beq $a1 2 FINDPX2
+        beq $a1 3 FINDPX3
+        beq $a1 4 FINDPX4
+        FINDPX0:
+        beq $a2 0 PX1
+        beq $a2 1 PX2
+        beq $a2 2 PX3
+        FINDPX1:
+        beq $a2 0 PX4
+        beq $a2 1 PX0
+        beq $a2 2 PX6
+        FINDPX2:
+        beq $a2 0 PX7
+        beq $a2 1 PX8
+        beq $a2 2 PX3
+        FINDPX3:
+        beq $a2 0 PX10
+        beq $a2 1 PX0
+        beq $a2 2 PX12
+        FINDPX4:
+        beq $a2 0 PX13
+        beq $a2 1 PX14
+        beq $a2 2 PX3
+        
+        PX0:
+        li $v0 0x010100
+        j ENDPX
+        PX1:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX2:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 4 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX3:
+        li $v0 0xffffff
+        j ENDPX
+        PX4:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 2 ENDPX
+        beq $a0 3 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX6:
+        li $v0 0x010100
+        beq $a0 5 ENDPX
+        beq $a0 6 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX7:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX8:
+        li $v0 0x010100
+        beq $a0 0 ENDPX
+        beq $a0 1 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX10:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 3 ENDPX
+        beq $a0 4 ENDPX
+        beq $a0 5 ENDPX
+        beq $a0 7 ENDPX
+        beq $a0 9 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX12:
+        li $v0 0x010100
+        beq $a0 2 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX13:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 4 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX14:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 4 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        ENDPX:
+        return()
 
 
 ##############################################################################
