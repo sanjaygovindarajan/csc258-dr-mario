@@ -1369,7 +1369,7 @@ bright_yellow:      .word       0xffffdd
             
             bne $t3, $t4, exit_BOTTOM_SEARCH_LOOP
             addi $t1, $t1, 1
-            bne $t1, 29, BOTTOM_SEARCH_LOOP
+            bne $t1, 31, BOTTOM_SEARCH_LOOP
             j exit_BOTTOM_SEARCH_LOOP
             
         find_bottom_east:
@@ -1382,11 +1382,8 @@ bright_yellow:      .word       0xffffdd
             
             bne $t3, $t4, exit_BOTTOM_SEARCH_LOOP
             addi $t1, $t1, 1
-            bne $t1, 29, BOTTOM_SEARCH_LOOP
+            bne $t1, 31, BOTTOM_SEARCH_LOOP
             j exit_BOTTOM_SEARCH_LOOP
-
-
-
 
 
 
