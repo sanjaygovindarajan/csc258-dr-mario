@@ -1055,7 +1055,7 @@ bright_yellow:      .word       0xffffdd
     move $t4 $s5
     move $t3 $s7
     move $t7 $t5
-    jal chain_fall
+    # jal chain_fall
     move $t5 $t7
     move $s5 $t4
     move $s7 $t3
@@ -1067,7 +1067,7 @@ bright_yellow:      .word       0xffffdd
     sw $zero 4($s5)
     move $t7 $t5
 
-    jal chain_fall
+    # jal chain_fall
     addi $t9 $t9 -1 # Decrease the counter
     beq $t9 $zero delete_return # If the counter is 0 we switch to the next instruction
     j delete_block_iterate # Otherwise we continue the loop
@@ -1108,6 +1108,7 @@ bright_yellow:      .word       0xffffdd
     jal CHECK_DELETE
     beq $a3 $zero finish_post_fall
     jal LOOP_DELETE
+    jal LOOP_FALL
     finish_post_fall:
     j PREP_DRAW_PILL
     
@@ -1387,6 +1388,7 @@ bright_yellow:      .word       0xffffdd
             jal PAINT_DISPLAY
             
             j end_CHECK_KEYBOARD_INPUT
+        
                 
         HANDLE_DROP:
             
@@ -1435,7 +1437,94 @@ bright_yellow:      .word       0xffffdd
             return()
             
             
+    LOOP_FALL:
+    addstack()
+    # t5 is a counter
+    repeat_loop_fall:
+    move $t5 $zero
+    move $s1 $zero
+    y_loop_fall:
+    move $s2 $zero
     
+    x_loop_fall:
+    
+    # Get location in the cell
+    move $a0 $s1
+    move $a1 $s2
+    jal GET_CELL_GRID_ADDRESS
+    
+    # Skip viruses
+    lw $t9 8($v0)
+    bne $t9 $zero recurse_x
+    
+    # Skip anything but red, blue, yellow
+    lw $t9 4($v0)
+    beq $t9 0x2ff3e0 do_fall
+    beq $t9 0xf8d210 do_fall
+    beq $t9 0xfa26a0 do_fall
+    
+    # Increase s2
+    recurse_x:
+    addi $s2 $s2 1
+    bge $s2 30 recurse_y
+    j x_loop_fall
+    
+    # Increase s1
+    recurse_y:
+    addi $s1 $s1 1
+    lw $t9 height
+    div $t9 $t9 2
+    bge $s1 $t9 end_fall
+    j y_loop_fall
+    
+    end_fall:
+    bne $t5 $zero repeat_loop_fall
+    return()
+    
+    do_fall:
+    
+    # Orient the capsules
+    lw $s3 12($v0)
+    div $s3 $s3 32
+    addi $s3 $s3 2
+    
+    move $t8 $v0 # t8 is old address
+    
+    
+    jal FIND_BOTTOM
+    
+    move $a0 $v0
+    move $a1 $s2
+    jal GET_CELL_GRID_ADDRESS
+    
+    jal SHIFT_DOWN
+    lw $s3 12($t8)
+    beq $s3 0 recurse_x
+    
+    add $t8 $t8 $s3
+    add $v0 $v0 $s3
+    jal SHIFT_DOWN
+    
+    j recurse_x
+    
+    SHIFT_DOWN:
+    # Moves contents of t8 to v0
+    addstack()
+    
+    beq $t8 $v0 shift_down_return
+    addi $t5 $t5 1
+    
+    lw $t9 4($t8)
+    sw $t9 4($v0)
+    li $t9 0x010100
+    sw $t9 4($t8)
+    
+    lw $t9 12($t8)
+    sw $t9 12($v0)
+    sw $zero 12($t8)
+    
+    shift_down_return:
+    return()
         
     FIND_BOTTOM:
 
@@ -1488,7 +1577,7 @@ bright_yellow:      .word       0xffffdd
             
             bne $t3, $t4, exit_BOTTOM_SEARCH_LOOP
             addi $t1, $t1, 1
-            bne $t1, 29, BOTTOM_SEARCH_LOOP
+            bne $t1, 31, BOTTOM_SEARCH_LOOP
             j exit_BOTTOM_SEARCH_LOOP
             
         find_bottom_east:
@@ -1501,7 +1590,7 @@ bright_yellow:      .word       0xffffdd
             
             bne $t3, $t4, exit_BOTTOM_SEARCH_LOOP
             addi $t1, $t1, 1
-            bne $t1, 29, BOTTOM_SEARCH_LOOP
+            bne $t1, 31, BOTTOM_SEARCH_LOOP
             j exit_BOTTOM_SEARCH_LOOP
 
 
