@@ -2539,6 +2539,166 @@ LOAD_LETTER_M:
          
         return()
     
+ DRAW_SCORE:
+        addstack()
+        lw $a3 game_grid_address
+        lw $t9 width
+        mult $t9 $t9 320
+        add $a3 $a3 $t9
+        li $t9 32
+        mult $t9 $t9 50
+        add $a3 $a3 $t9
+        
+        lw $t9 gravity_address
+        lw $t9 16($t9)
+        li $t6 1
+        draw_num_loop:
+        move $a1 $t6
+        move $a0 $t9
+        jal BASE_CONVERT
+        move $t6 $a1
+        move $a0 $v0
+        jal DRAW_NUM
+        subi $a3 $a3 128
+        mult $v1 $v1 5
+        sub $a3 $a3 $v1
+        blt $t6 1000 draw_num_loop
+        return()
+        
+        BASE_CONVERT:
+        addstack()
+        mult $a1 $a1 10
+        div $v0 $a0 $a1
+        mult $v0 $v0 $a1
+        sub $v0 $a0 $v0
+        div $a1 $a1 10
+        div $v0 $v0 $a1
+        mult $a1 $a1 10
+        return()
+        
+        DRAW_NUM:
+        addstack()
+        li $a1 0
+        lw $v1 width
+        mult $v1 $v1 16
+        y_loop:
+        li $a2 0
+        x_loop:
+        jal FINDPX
+        sw $v0 4($a3)
+        addi $a2 $a2 1
+        addi $a3 $a3 32
+        blt $a2 3 x_loop
+        jal FINDPX
+        addi $a1 $a1 1
+        add $a3 $a3 $v1
+        subi $a3 $a3 96
+        blt $a1 5 y_loop
+        return()
+        
+        FINDPX:
+        addstack()
+        beq $a1 0 FINDPX0
+        beq $a1 1 FINDPX1
+        beq $a1 2 FINDPX2
+        beq $a1 3 FINDPX3
+        beq $a1 4 FINDPX4
+        FINDPX0:
+        beq $a2 0 PX1
+        beq $a2 1 PX2
+        beq $a2 2 PX3
+        FINDPX1:
+        beq $a2 0 PX4
+        beq $a2 1 PX0
+        beq $a2 2 PX6
+        FINDPX2:
+        beq $a2 0 PX7
+        beq $a2 1 PX8
+        beq $a2 2 PX3
+        FINDPX3:
+        beq $a2 0 PX10
+        beq $a2 1 PX0
+        beq $a2 2 PX12
+        FINDPX4:
+        beq $a2 0 PX13
+        beq $a2 1 PX14
+        beq $a2 2 PX3
+        
+        PX0:
+        li $v0 0x010100
+        j ENDPX
+        PX1:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX2:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 4 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX3:
+        li $v0 0xffffff
+        j ENDPX
+        PX4:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 2 ENDPX
+        beq $a0 3 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX6:
+        li $v0 0x010100
+        beq $a0 5 ENDPX
+        beq $a0 6 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX7:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX8:
+        li $v0 0x010100
+        beq $a0 0 ENDPX
+        beq $a0 1 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX10:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 3 ENDPX
+        beq $a0 4 ENDPX
+        beq $a0 5 ENDPX
+        beq $a0 7 ENDPX
+        beq $a0 9 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX12:
+        li $v0 0x010100
+        beq $a0 2 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX13:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 4 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX14:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 4 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        ENDPX:
+        return()
 
 
 ##############################################################################
