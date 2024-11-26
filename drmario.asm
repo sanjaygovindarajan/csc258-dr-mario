@@ -1,17 +1,17 @@
 ################# CSC258 Assembly Final Project ###################
 # This file contains our implementation of Dr Mario.
 #
-# Student 1: Name, Student Number
-# Student 2: Name, Student Number (if applicable)
+# Student 1: Sanjay Gavindarajan
+# Student 2: Seonghyun Ban
 #
 # We assert that the code submitted here is entirely our own 
 # creation, and will indicate otherwise when it is not.
 #
 ######################## Bitmap Display Configuration ########################
-# - Unit width in pixels:       TODO
-# - Unit height in pixels:      TODO
-# - Display width in pixels:    TODO
-# - Display height in pixels:   TODO
+# - Unit width in pixels:       2
+# - Unit height in pixels:      2
+# - Display width in pixels:    110
+# - Display height in pixels:   72
 # - Base Address for Display:   0x10008000 ($gp)
 ##############################################################################
 
@@ -38,7 +38,6 @@ ADDR_DSPL:
 ADDR_KBRD:
     .word 0xffff0000
 
-  
 
 
 ##############################################################################
@@ -46,27 +45,33 @@ ADDR_KBRD:
 ##############################################################################
 
 # ADDRESSES
-displayaddress:     .word       0x10008000   # Base address for the display
-grid_addresses:     .word       0x11000000   # Base address for the grid cell addresses
+displayaddress:         .word       0x10008000   # Base address for the display
+game_grid_address:      .word       0x11000000   # Base address for the grid cell addresses
+message_grid_address:   .word       0x12000000   # Base address for the grid cell addresses
+pill_queue_address:     .word       0x13000000
+gravity_address:        .word       0x14000000
+letter_address:         .word       0x20000000  
 
 # NUMERICAL VALUES
-width:              .word       80           # Width of the display (64 pixels)
-height:             .word       64           # Height of the display (64 pixels)
+width:              .word       110           # Width of the display (64 pixels)
+height:             .word       72           # Height of the display (64 pixels)
 
 # COORDINATES
-initial_pill_row:   .word       3            # Initial row position of the pill
-initial_pill_col:   .word       12           # Initial column position of the pill
+initial_pill_row:   .word       5            # Initial row position of the pill
+initial_pill_col:   .word       16           # Initial column position of the pill
+pill_queue_row:     .word       2
+pill_queue_col:     .word       32
 
 # COLORS (RGB values)
 black:              .word       0x010100     # RGB color code for black
 red:                .word       0xfa26a0     # RGB color code for red
-yellow:             .word       0xf8d210     # RGB color code for yellow
+yellow:             .word       0xf8d210     # RGB color code for yellowff
 blue:               .word       0x2ff3e0     # RGB color code for blue
 rosewater:          .word       0xffc2c7     # RGB color code for rosewater (light pink)
+white:              .word       0xffffff     # RGB color code for white
 aqua:               .word       0x99ffff
 bright_red:         .word       0xff99dd
 bright_yellow:      .word       0xffffdd
-
 
 
 .text
@@ -88,7 +93,8 @@ bright_yellow:      .word       0xffffdd
 # Subsection: >MAIN
 
     main:
-        
+        jal LEVELS_INIT
+        NEXT_LEVEL:
         jal INIT
         jal PAINT_DISPLAY
         jal game_loop
@@ -108,6 +114,8 @@ bright_yellow:      .word       0xffffdd
         # 2b. Update locations (capsules)
         jal     LET_CURRENT_PILL_FALL
         NO_UPDATE:
+        
+        jal DRAW_SCORE
 
         # 3. Draw the screen
         jal PAINT_DISPLAY
@@ -115,8 +123,6 @@ bright_yellow:      .word       0xffffdd
         # 5. Go back to Step 1
         j game_loop
 
-    
-    
     
     INPUT_LOOP:
     
@@ -133,16 +139,12 @@ bright_yellow:      .word       0xffffdd
         li $a0, 10
         syscall
         addi $t9, $t9, 1
-        li $t8, 100
+        lw $t8, gravity_address
+        lw $t8, 0($t8)
         bne $t9, $t8, SLEEP_LOOP
 
     return()
     
-
-
-
-
-
 
 
 
@@ -153,30 +155,55 @@ bright_yellow:      .word       0xffffdd
 ##############################################################################
 # Subsection: >INITIALIZATION
 
+    # Resets the level of the game as well
+    LEVELS_INIT:
+        addstack()
+        li $s0 3
+        lw $s1 gravity_address
+        sw $s0 4($s1)
+        li $s0 100
+        sw $s0 12($s1)
+        sw $zero 16($s1)
+        return()
+
     INIT:
         
         addstack()
         
-        jal INITIALIZE_GRID             # Initialize the grid and display the bottle
-        lw $s0, grid_addresses          # $s0 is the address of the grid
+        jal INITIALIZE_GAME_GRID
+        jal INITIALIZE_MESSAGE_GRID
+        
+        lw $s1 gravity_address
+        lw $s0 12($s1)
+        sw $s0 0($s1)
+        
+        lw $s0 4($s1)
+        addi $s0 $s0 1 # Increase the number of viruses by 1
+        sw $s0 4($s1)
+        sw $s0 8($s1)
+        
+        lw $s0, game_grid_address          # $s0 is the address of the grid        
         lw $s1, initial_pill_row
         lw $s2, initial_pill_col
         li $s3, 0 
         jal DRAW_BOTTLE                 # Draw the bottle
         jal DRAW_NEW_PILL
         
-        li $t8 4
+        lw $t8 gravity_address
+        lw $t8 4($t8)
         DRAW_VIRUSES:
         jal DRAW_VIRUS
         subi $t8 $t8 1
         bgtz $t8 DRAW_VIRUSES
+        
+        jal INITIALIZE_PILL_QUEUE
         
         return()
         
 
 
     # Function: INITIALIZE_GRID
-    # Initializes the grid by storing the addresses of display cells in grid_addresses.
+    # Initializes the grid by storing the addresses of display cells in game_grid_address.
     INITIALIZE_GRID:
 
         addstack()
@@ -189,8 +216,8 @@ bright_yellow:      .word       0xffffdd
         divu $t8, $t0, 2                # Number of columns
         divu $t9, $t1, 2                # Number of rows
         
-        # Store grid cell addresses in grid_addresses array
-        lw $t2, grid_addresses          # Load address of grid_addresses array
+        # Store grid cell addresses in game_grid_address array
+        move $t2, $s0           # Load address of game_grid_address array
         lw $t5, displayaddress          # Load the base address of the display
         
         li $t3, 0                       # set row index (row = 0)
@@ -207,11 +234,12 @@ bright_yellow:      .word       0xffffdd
                 mul $t6, $t6, 4          # Offset * 4 (byte address offset)
                 add $v0, $t5, $t6        # Base Address + Offset == final address
                 
-                # Store the calculated address in the grid_addresses array
+                # Store the calculated address in the game_grid_address array
                 sw $v0, 0($t2)             # Store the address in the array
-                lw $t6, black
+                move $t6, $s7
                 sw $t6, 4($t2)             # Store the color in the array
                 sw $zero, 8($t2)           # Store that it is not a virus
+                sw $zero, 12($t2)          # Store direction of support
                 
                 addi $t2, $t2, 32           # Move to the next array index (each address is 4 bytes)
                 addi $t4, $t4, 1           # Increment column index (j++)
@@ -222,10 +250,48 @@ bright_yellow:      .word       0xffffdd
                 
         return()
 
+    INITIALIZE_GAME_GRID:
+        
+        addstack()
+        lw $s0, game_grid_address
+        lw $s7, black
+        jal INITIALIZE_GRID             # Initialize the grid and display the bottle
+        return()
+    
+    INITIALIZE_MESSAGE_GRID:
+    
+        addstack()
+        lw $s0, message_grid_address
+        lw $s7, white
+        jal INITIALIZE_GRID             # Initialize the grid and display the bottle
+        return()
 
-
-
-
+    INITIALIZE_PILL_QUEUE:
+        addstack()
+        
+        lw $t1, pill_queue_col
+        lw $t7, pill_queue_address
+        
+        li $t3, 0
+        
+        loop_INITIALIZE_PILL_QUEUE:
+            lw $a0, pill_queue_row
+            move $a1, $t1
+            li $a2, 3
+            jal RANDOM_COLOR
+            move $s6, $v0
+            sw $s6, 4($t7) 
+            jal RANDOM_COLOR
+            move $s7, $v0
+            sw $s7, 0($t7)
+            jal DRAW_PILL
+            
+            addi $t1, $t1, 4
+            addi $t3, $t3, 1
+            addi $t7, $t7, 32
+            bne $t3, 5, loop_INITIALIZE_PILL_QUEUE
+            
+        return()
 
 
 
@@ -270,7 +336,6 @@ bright_yellow:      .word       0xffffdd
 
 
 
-
 # End of: <CELL_METHODS
 ##############################################################################
 
@@ -281,6 +346,8 @@ bright_yellow:      .word       0xffffdd
     GET_CELL_GRID_ADDRESS:
 
         addstack()
+        
+        move $s5, $t7 # Save t7 to restore value later
 
         # Load base address and width
         lw $t0, width            # Width of the display
@@ -294,6 +361,8 @@ bright_yellow:      .word       0xffffdd
         mul $t6, $t6, 32          # Offset * 4 (byte address offset)
         add $v0, $s0, $t6        # Base Address + Offset == final address
         
+        move $t7, $s5 # Restore t7
+        
         return()
 
 
@@ -305,9 +374,6 @@ bright_yellow:      .word       0xffffdd
         lw $v0, 0($a0)
         
         return()
-
-
-
 
 
 
@@ -337,6 +403,7 @@ bright_yellow:      .word       0xffffdd
 
         addstack()
         
+        move $s5, $t0
         # Painting the first square...
         jal SET_CELL_COLOR         # Paint the first square of the pill
         
@@ -369,9 +436,10 @@ bright_yellow:      .word       0xffffdd
             j end_DRAW_PILL      # Skip the vertical part
         
         end_DRAW_PILL:
+            move $t0, $s5
             return()
 
-
+    
 
     DRAW_NEW_PILL:
 
@@ -381,8 +449,11 @@ bright_yellow:      .word       0xffffdd
         lw $a1, initial_pill_col
         jal GET_CELL_GRID_ADDRESS
         lw $s6 4($v0)
-        bne $s6 0x010100 GAME_OVER
+        beq $s6 0x010100 proceed_DRAW_NEW_PILL
+        jal GAME_OVER
+        j end_DRAW_NEW_PILL
         
+        proceed_DRAW_NEW_PILL:
         li $a2, 0
         jal RANDOM_COLOR
         move $s6, $v0
@@ -391,6 +462,7 @@ bright_yellow:      .word       0xffffdd
         
         jal DRAW_PILL
         
+        end_DRAW_NEW_PILL:
         return() 
 
 
@@ -477,7 +549,6 @@ bright_yellow:      .word       0xffffdd
         move $t0, $v0
         lw $t2, 4($t0)
         
-        
         beq $a2, 0, get_vertical_south_half   # Check if vertical pill is needed
         beq $a2, 1, get_horizontal_west_half  # Check if horizontal pill is needed
         beq $a2, 2, get_vertical_north_half  # Check if horizontal pill is needed
@@ -517,7 +588,151 @@ bright_yellow:      .word       0xffffdd
             return()
 
 
+    LOAD_NEW_PILL:
+        
+        addstack()
+        
+        lw $a0, initial_pill_row        # Draw the initial pill at the specified position
+        lw $a1, initial_pill_col
+        jal GET_CELL_GRID_ADDRESS
+        lw $s6 4($v0)
+        beq $s6 0x010100 continue_LOAD_NEW_PILL
+        jal SLEEP1000
+        jal GAME_OVER
+        j end_LOAD_NEW_PILL
+        
+        continue_LOAD_NEW_PILL:
+        li $t9, 0
+        move_left_LOAD_NEW_PILL:
+            lw $t0, pill_queue_row
+            lw $t1, pill_queue_col
+            lw $t2, pill_queue_address
+            add $t1, $t1, $t9
+            
+            move $a0, $t0
+            move $a1, $t1
+            li $a2, 3
+            jal REMOVE_PILL
+            
+            subi $t9, $t9, 1
+            lw $t0, pill_queue_row
+            lw $t1, pill_queue_col
+            add $t1, $t1, $t9
+            move $a0, $t0
+            move $a1, $t1
+            li $a2, 3
+        
+            lw $s7, 0($t2)
+            lw $s6, 4($t2)
+            jal DRAW_PILL
+            jal PAINT_DISPLAY
+            jal SLEEP50
+            
+            bne $t9, -16, move_left_LOAD_NEW_PILL
+            
+        lw $t0, pill_queue_row
+        lw $t1, pill_queue_col
+        lw $t2, pill_queue_address
+        add $t1, $t1, $t9
+        move $a0, $t0
+        move $a1, $t1
+        li $a2, 3
+        jal REMOVE_PILL
+        
+        lw $t0, pill_queue_row
+        lw $t1, pill_queue_col
+        add $t1, $t1, $t9
+        move $a0, $t0
+        move $a1, $t1
+        li $a2, 0
+    
+        lw $s7, 4($t2)
+        lw $s6, 0($t2)
+        jal DRAW_PILL
+        jal PAINT_DISPLAY
+        
+        li $t4, 0
+        
+        move_down_LOAD_NEW_PILL:
+            lw $t0, pill_queue_row
+            lw $t1, pill_queue_col
+            lw $t2, pill_queue_address
+            add $t1, $t1, $t9
+            add $t0, $t0, $t4
+            
+            move $a0, $t0
+            move $a1, $t1
+            li $a2, 0
+            jal REMOVE_PILL
+            
+            addi $t4, $t4, 1
+            lw $t0, pill_queue_row
+            lw $t1, pill_queue_col
+            add $t1, $t1, $t9
+            add $t0, $t0, $t4
+            move $a0, $t0
+            move $a1, $t1
+            li $a2, 0
+        
+            lw $s7, 4($t2)
+            lw $s6, 0($t2)
+            jal DRAW_PILL
+            jal PAINT_DISPLAY
+            jal SLEEP50
+            
+            bne $t4, 3, move_down_LOAD_NEW_PILL
+            
+        
+        lw $t1, pill_queue_col
+        addi $t1, $t1, 4
+        lw $t7, pill_queue_address
+        addi $t7, $t7, 32
+            
+        jal UPDATE_PILL_QUEUE
+        return()
+        
 
+    UPDATE_PILL_QUEUE:
+        addstack()
+        
+        lw $t1, pill_queue_col
+        lw $t7, pill_queue_address
+        
+        li $t3, 0
+        
+        loop_UPDATE_PILL_QUEUE:
+            lw $a0, pill_queue_row
+            move $a1, $t1
+            li $a2, 3
+            
+            lw $s6, 36($t7) 
+            lw $s7, 32($t7)
+            sw $s6, 4($t7)
+            sw $s7, 0($t7)
+            
+            jal DRAW_PILL
+            
+            addi $t1, $t1, 4
+            addi $t3, $t3, 1
+            addi $t7, $t7, 32
+            bne $t3, 4, loop_UPDATE_PILL_QUEUE
+            
+        lw $a0, pill_queue_row
+        lw $a1, pill_queue_col
+        addi $a1, $a1, 16 
+        li $a2, 3
+        jal RANDOM_COLOR
+        move $s6, $v0
+        sw $s6, 4($t7) 
+        jal RANDOM_COLOR
+        move $s7, $v0
+        sw $s7, 0($t7)
+        jal DRAW_PILL
+        
+        end_LOAD_NEW_PILL:
+            
+        return()
+        
 
 
 
@@ -633,6 +848,8 @@ bright_yellow:      .word       0xffffdd
 
     LET_CURRENT_PILL_FALL:
         addstack()
+        lw $t9, game_grid_address
+        bne $t9, $s0 end_LET_CURRENT_PILL_FALL
         jal GET_PILL_ADDRESSES
         move $a1 $v0
         move $a2 $v1
@@ -642,7 +859,8 @@ bright_yellow:      .word       0xffffdd
         li $a1, 0
         move $a2, $s3
         jal UPDATE_CURRENT_PILL
-
+        
+        end_LET_CURRENT_PILL_FALL:
         return()              # Return from function
 
 
@@ -658,7 +876,7 @@ bright_yellow:      .word       0xffffdd
 
 ##############################################################################
 # Subsection: >COLLISION_DETECTOR
-
+    # Detects if there is a pill to the left
     detect_left:
     add $a1 $a1 4
     add $a0 $a0 4
@@ -745,7 +963,8 @@ bright_yellow:      .word       0xffffdd
     j post_fall
 
     PREP_DRAW_PILL:
-    jal DRAW_NEW_PILL
+    jal LOAD_NEW_PILL
+    # jal DRAW_NEW_PILL
     lw $s1 initial_pill_row
     lw $s2 initial_pill_col
     li $s3 0
@@ -759,15 +978,43 @@ bright_yellow:      .word       0xffffdd
     beq $t8 0x010100 finish_detect_fall # If there is no block below, do nothing
     beq $a0 $a1 finish_detect_fall # If one half falls onto the other half, it is ok
     beq $a0 $a2 finish_detect_fall
+    
     addi $t9 $t9 1
+    
+    sub $a0 $a0 $a3
+    addi $a0 $a0 32
+    beq $a0 $a1 mark_right
+    beq $a0 $a2 mark_right
+    subi $a0 $a0 64
+    beq $a0 $a1 mark_left
+    beq $a0 $a2 mark_left
+    addi $a0 $a0 32
+    
     finish_detect_fall:
     jr $ra
+    
+    mark_left:
+    li $v1 32
+    sw $v1 8($a0)
+    addi $a0 $a0 32
+    li $v1 -32
+    sw $v1 8($a0)
+    j finish_detect_fall
+    
+    mark_right:
+    li $v1 -32
+    sw $v1 8($a0)
+    subi $a0 $a0 32
+    li $v1 32
+    sw $v1 8($a0)
+    j finish_detect_fall
 
 
 
 
     delete_block: # Deletes t9 blocks
     addstack()
+    addi $a3 $a3 1
 
     mult $t7 $t7 -1 # Changes the direction
     j delete_block_down
@@ -776,12 +1023,51 @@ bright_yellow:      .word       0xffffdd
 
     move $t5 $t7
     move $a0 $s5
+    lw $s7 4($s5)
+    beq $s7 0 skip_eliminate_virus
+    lw $s7 gravity_address
+    
+    lw $t8 16($s7)
+    addi $t8 $t8 1 # Increment score
+    sw $t8 16($s7)
+    
+    lw $t8 8($s7)
+    subi $t8 $t8 1
+    sw $t8 8($s7)
+    beq $t8 0 NEXT_LEVEL
+    skip_eliminate_virus:
     li $s7 0x010100
     sw $s7 0($s5)
+    
+    lw $s7 8($s5)
+    sw $zero 8($s5)
+    add $s5 $s5 $s7
+    sw $zero 8($s5)
+    
+    lw $t6 width
+    mult $t6 $t6 16
+    add $s5 $s5 $t6
+    
+    beq $s7 $zero skip_fall
+    lw $t4 0($s5)
+    bne $t4 0x010100 skip_fall
+    
+    move $t4 $s5
+    move $t3 $s7
+    move $t7 $t5
+    # jal chain_fall
+    move $t5 $t7
+    move $s5 $t4
+    move $s7 $t3
+    skip_fall:
+    sub $s5 $s5 $t6
+    
+    sub $s5 $s5 $s7
+    
     sw $zero 4($s5)
     move $t7 $t5
 
-    jal chain_fall
+    # jal chain_fall
     addi $t9 $t9 -1 # Decrease the counter
     beq $t9 $zero delete_return # If the counter is 0 we switch to the next instruction
     j delete_block_iterate # Otherwise we continue the loop
@@ -795,6 +1081,12 @@ bright_yellow:      .word       0xffffdd
     j delete_block_iterate
 
     delete_return:
+    lw $s7 gravity_address
+    lw $t6 0($s7)
+    beq $t6 5 skip_speed_up
+    subi $t6 $t6 1
+    sw $t6 0($s7)
+    skip_speed_up:
     lw $ra, 0($sp)                  # Load saved $ra
     addi $sp, $sp, 4                # Restore stack pointer
     jr $ra
@@ -806,10 +1098,58 @@ bright_yellow:      .word       0xffffdd
     jal GET_PILL_ADDRESSES
     addi $v0 $v0 4
     addi $v1 $v1 4
+    
+    li $a3 0
     lw $t3 0($v0)
-
-    skip_left_3:
     move $s5 $v0
+    jal CHECK_DELETE
+    lw $t3 0($v1)
+    move $s5 $v1
+    jal CHECK_DELETE
+    beq $a3 $zero finish_post_fall
+    jal LOOP_DELETE
+    jal LOOP_FALL
+    finish_post_fall:
+    j PREP_DRAW_PILL
+    
+    LOOP_DELETE:
+    addstack()
+    li $v0 0x11000004
+    li $a3 0
+    loop_delete:
+    move $s5 $v0
+    lw $t3 0($s5)
+    beq $t3 0x2ff3e0 prep_delete
+    beq $t3 0xf8d210 prep_delete
+    beq $t3 0xfa26a0 prep_delete
+    finish_loop_delete:
+    addi $v0 $v0 32
+    lw $t3 width
+    lw $s5 height
+    mult $t3 $t3 $s5
+    mult $t3 $t3 8
+    addi $t3 $t3 0x11000004
+    bge $v0 $t3 loop_delete_return
+    j loop_delete
+    prep_delete:
+    jal CHECK_DELETE
+    j finish_loop_delete
+    loop_delete_return:
+    bne $a3 $zero restart_loop
+    return()
+    restart_loop:
+    li $v0 0x11000004
+    li $a3 0
+    j loop_delete
+    
+    CHECK_DELETE:
+    # Deletes any chain starting at a particular half-capsule.
+    # Parameters:
+    # s5: The half-capsule's address
+    # t3: The half-capsule's color
+    addstack()
+    move $v0 $s5
+    
     li $t9 1 # Sets counter t9 to 1
     li $t7 -32 # Pills are -32 apart
 
@@ -871,68 +1211,12 @@ bright_yellow:      .word       0xffffdd
     blt $t9 4 skip_left_4b
     jal delete_block
     skip_left_4b:
-    lw $t3 0($v1)
-    move $s5 $v1 # Reset s5
-    li $t9 1 # Sets counter t9 to 1
-    li $t7 -32 # Pills are -32 apart
-
-    left_loop_4:
-    add $s5 $s5 $t7
-    lw $t8 0($s5)
-    bne $t8 $t3 skip_right_4 # If the chain ends, check a different direction
-    addi $t9 $t9 1
-    j left_loop_4
-
-    skip_right_4:
-    # blt $t9 4 skip_right_4b
-    # jal delete_block
-    skip_right_4b:
-    move $s5 $v1 # Reset s5
-    # li $t9 1 # Sets counter t9 to 1
-    li $t7 32 # Pills are 32 apart
-    right_loop_4:
-    add $s5 $s5 $t7
-    lw $t8 0($s5)
-    bne $t8 $t3 skip_down_4
-    addi $t9 $t9 1
-    j right_loop_4
-
-    skip_down_4:
-    blt $t9 4 skip_down_4b
-    jal delete_block
-    skip_down_4b:
-    move $s5 $v1 # Reset s5
-    li $t9 1 # Sets counter t9 to 1
-    lw $t7 width
-    mult $t7 $t7 16
-
-    down_loop_4:
-    add $s5 $s5 $t7
-    lw $t8 0($s5)
-    bne $t8 $t3 skip_up_4
-    addi $t9 $t9 1
-    j down_loop_4
+    return()
     
-    skip_up_4:
-    # blt $t9 4 skip_up_3b
-    # jal delete_block
-    skip_up_4b:
-    move $s5 $v1 # Reset s5
-    # li $t9 1 # Sets counter t9 to 1
-    lw $t7 width
-    mult $t7 $t7 -16
 
-    up_loop_4:
-    add $s5 $s5 $t7
-    lw $t8 0($s5)
-    bne $t8 $t3 finish_deletion
-    addi $t9 $t9 1
-    j up_loop_4
+# END BLOCK DELETION
+# BEGIN FALLING BLOCKS
 
-    finish_deletion:
-    blt $t9 4 PREP_DRAW_PILL
-    jal delete_block
-    j PREP_DRAW_PILL
 
     chain_fall:
     move $s7 $s5
@@ -959,7 +1243,13 @@ bright_yellow:      .word       0xffffdd
 
     sw $s6 0($s7)
     add $s7 $s7 $t6 # s7 is one below the capsule to drop
-    sw $t8 0($s7) #
+    sw $t8 0($s7)
+    
+    sub $s7 $s7 $t6
+    lw $s6 8($s7)
+    sw $zero 8($s7)
+    add $s7 $s7 $t6
+    sw $s6 8($s7)
 
     add $s7 $s7 $t6 # s7 is one below the place we just dropped to
     lw $t8 0($s7)
@@ -998,15 +1288,40 @@ bright_yellow:      .word       0xffffdd
         KEYBOARD_HANDLER:
             
             lw $t2, 4($t0)
+            beq $t2, 0x65, SET_DIFFICULTY_EASY
+            beq $t2, 0x6d, SET_DIFFICULTY_MEDIUM
+            beq $t2, 0x68, SET_DIFFICULTY_HARD
             beq $t2, 0x71, HANDLE_QUIT
             beq $t2, 0x77, HANDLE_ROTATE
             beq $t2, 0x61, HANDLE_MOVE_LEFT
             beq $t2, 0x73, HANDLE_DROP
             beq $t2, 0x64, HANDLE_MOVE_RIGHT
+            beq $t2, 0x70, HANDLE_PAUSE
+            beq $t2, 0x72, HANDLE_RETRY
             j end_CHECK_KEYBOARD_INPUT
+        
+        SET_DIFFICULTY_EASY:
+        li $t2 100
+        lw $t1 gravity_address
+        sw $t2 12($t1)
+        j end_CHECK_KEYBOARD_INPUT
+        SET_DIFFICULTY_MEDIUM:
+        lw $t1 gravity_address
+        li $t2 50
+        sw $t2 12($t1)
+        li $t9 0
+        j end_CHECK_KEYBOARD_INPUT
+        SET_DIFFICULTY_HARD:
+        lw $t1 gravity_address
+        li $t2 5
+        sw $t2 12($t1)
+        sw $t2 0($t1)
+        li $t9 0
+        j end_CHECK_KEYBOARD_INPUT
         
         HANDLE_QUIT:
             jal INIT
+
             jal PAINT_DISPLAY
             j END_MAIN
         
@@ -1021,6 +1336,7 @@ bright_yellow:      .word       0xffffdd
             li $a1, -1
             move $a2, $s3
             jal UPDATE_CURRENT_PILL
+
             jal PAINT_DISPLAY
             
             j end_CHECK_KEYBOARD_INPUT
@@ -1036,6 +1352,7 @@ bright_yellow:      .word       0xffffdd
             li $a1, 1
             move $a2, $s3
             jal UPDATE_CURRENT_PILL
+
             jal PAINT_DISPLAY
 
             j end_CHECK_KEYBOARD_INPUT
@@ -1067,9 +1384,11 @@ bright_yellow:      .word       0xffffdd
             li $a0, 0
             li $a1, 0
             jal UPDATE_CURRENT_PILL
+
             jal PAINT_DISPLAY
             
             j end_CHECK_KEYBOARD_INPUT
+        
                 
         HANDLE_DROP:
             
@@ -1085,6 +1404,7 @@ bright_yellow:      .word       0xffffdd
                 li $a1, 0
                 move $a2, $s3
                 jal UPDATE_CURRENT_PILL
+    
                 jal PAINT_DISPLAY
             
             jal SLEEP1000
@@ -1093,10 +1413,118 @@ bright_yellow:      .word       0xffffdd
             lw $ra, 0($sp)       # Restore return address
             addi $sp, $sp, 4     # Restore stack pointer 
             j end_INPUT_LOOP
+            
+        HANDLE_PAUSE:
+            lw $t9, game_grid_address
+            beq $t9, $s0 show_pause_view
+            lw $t9, message_grid_address
+            beq $t9, $s0 show_game_view
+            j end_INPUT_LOOP
+            
+            show_pause_view:
+                jal DRAW_PAUSE_MESSAGE
+                jal LOAD_MESSAGE_VIEW
+                j end_INPUT_LOOP
                 
+            show_game_view:
+                jal LOAD_GAME_VIEW
+                j end_INPUT_LOOP
+                
+        HANDLE_RETRY:
+            j main
+              
         end_CHECK_KEYBOARD_INPUT:
             return()
+            
+            
+    LOOP_FALL:
+    addstack()
+    # t5 is a counter
+    repeat_loop_fall:
+    move $t5 $zero
+    move $s1 $zero
+    y_loop_fall:
+    move $s2 $zero
     
+    x_loop_fall:
+    
+    # Get location in the cell
+    move $a0 $s1
+    move $a1 $s2
+    jal GET_CELL_GRID_ADDRESS
+    
+    # Skip viruses
+    lw $t9 8($v0)
+    bne $t9 $zero recurse_x
+    
+    # Skip anything but red, blue, yellow
+    lw $t9 4($v0)
+    beq $t9 0x2ff3e0 do_fall
+    beq $t9 0xf8d210 do_fall
+    beq $t9 0xfa26a0 do_fall
+    
+    # Increase s2
+    recurse_x:
+    addi $s2 $s2 1
+    bge $s2 30 recurse_y
+    j x_loop_fall
+    
+    # Increase s1
+    recurse_y:
+    addi $s1 $s1 1
+    lw $t9 height
+    div $t9 $t9 2
+    bge $s1 $t9 end_fall
+    j y_loop_fall
+    
+    end_fall:
+    bne $t5 $zero repeat_loop_fall
+    return()
+    
+    do_fall:
+    
+    # Orient the capsules
+    lw $s3 12($v0)
+    div $s3 $s3 32
+    addi $s3 $s3 2
+    
+    move $t8 $v0 # t8 is old address
+    
+    
+    jal FIND_BOTTOM
+    
+    move $a0 $v0
+    move $a1 $s2
+    jal GET_CELL_GRID_ADDRESS
+    
+    jal SHIFT_DOWN
+    lw $s3 12($t8)
+    beq $s3 0 recurse_x
+    
+    add $t8 $t8 $s3
+    add $v0 $v0 $s3
+    jal SHIFT_DOWN
+    
+    j recurse_x
+    
+    SHIFT_DOWN:
+    # Moves contents of t8 to v0
+    addstack()
+    
+    beq $t8 $v0 shift_down_return
+    addi $t5 $t5 1
+    
+    lw $t9 4($t8)
+    sw $t9 4($v0)
+    li $t9 0x010100
+    sw $t9 4($t8)
+    
+    lw $t9 12($t8)
+    sw $t9 12($v0)
+    sw $zero 12($t8)
+    
+    shift_down_return:
+    return()
         
     FIND_BOTTOM:
 
@@ -1125,7 +1553,7 @@ bright_yellow:      .word       0xffffdd
             beq $s3 3 find_bottom_east
             
             addi $t1, $t1, 1
-            bne $t1, 29, BOTTOM_SEARCH_LOOP
+            bne $t1, 31, BOTTOM_SEARCH_LOOP
         
         exit_BOTTOM_SEARCH_LOOP:
             subi $t1, $t1, 1
@@ -1149,7 +1577,7 @@ bright_yellow:      .word       0xffffdd
             
             bne $t3, $t4, exit_BOTTOM_SEARCH_LOOP
             addi $t1, $t1, 1
-            bne $t1, 29, BOTTOM_SEARCH_LOOP
+            bne $t1, 31, BOTTOM_SEARCH_LOOP
             j exit_BOTTOM_SEARCH_LOOP
             
         find_bottom_east:
@@ -1162,7 +1590,7 @@ bright_yellow:      .word       0xffffdd
             
             bne $t3, $t4, exit_BOTTOM_SEARCH_LOOP
             addi $t1, $t1, 1
-            bne $t1, 29, BOTTOM_SEARCH_LOOP
+            bne $t1, 31, BOTTOM_SEARCH_LOOP
             j exit_BOTTOM_SEARCH_LOOP
 
 
@@ -1187,58 +1615,58 @@ bright_yellow:      .word       0xffffdd
         
         lw $s7, rosewater        # Load rosewater color
         
-        li $a0, 2
-        li $a1, 10
-        li $a2, 5
-        li $a3, 10
+        li $a0, 4
+        li $a1, 14
+        li $a2, 7
+        li $a3, 14
         jal DRAW_RECTANGLE # Left Neck
         
-        li $a0, 2
-        li $a1, 9
-        li $a2, 2
-        li $a3, 9
+        li $a0, 4
+        li $a1, 13
+        li $a2, 4
+        li $a3, 13
         jal DRAW_RECTANGLE # Left Mouth
         
-        li $a0, 2
-        li $a1, 14
-        li $a2, 5
-        li $a3, 14
+        li $a0, 4
+        li $a1, 18
+        li $a2, 7
+        li $a3, 18
         jal DRAW_RECTANGLE # Right Neck
         
-        li $a0, 2
-        li $a1, 15
-        li $a2, 2
-        li $a3, 15
+        li $a0, 4
+        li $a1, 19
+        li $a2, 4
+        li $a3, 19
         jal DRAW_RECTANGLE # Right Mouth
         
-        li $a0, 5
-        li $a1, 3
-        li $a2, 5
-        li $a3, 9
+        li $a0, 7
+        li $a1, 7
+        li $a2, 7
+        li $a3, 13
         jal DRAW_RECTANGLE # Left Body Top
         
-        li $a0, 5
-        li $a1, 15
-        li $a2, 5
-        li $a3, 21
+        li $a0, 7
+        li $a1, 19
+        li $a2, 7
+        li $a3, 25
         jal DRAW_RECTANGLE # Right Body Top
         
-        li $a0, 5
-        li $a1, 2
-        li $a2, 29
-        li $a3, 2
+        li $a0, 7
+        li $a1, 6
+        li $a2, 31
+        li $a3, 6
         jal DRAW_RECTANGLE # Left Body Side
         
-        li $a0, 5
-        li $a1, 22
-        li $a2, 29
-        li $a3, 22
+        li $a0, 7
+        li $a1, 26
+        li $a2, 31
+        li $a3, 26
         jal DRAW_RECTANGLE # Right Body Side
         
-        li $a0, 29
-        li $a1, 3
-        li $a2, 29
-        li $a3, 21
+        li $a0, 31
+        li $a1, 7
+        li $a2, 31
+        li $a3, 25
         jal DRAW_RECTANGLE # Bottom
         
         return()
@@ -1289,7 +1717,140 @@ bright_yellow:      .word       0xffffdd
         return()
 
 
+    DRAW_PAUSE_MESSAGE:
+        addstack()
+        
+        jal INITIALIZE_MESSAGE_GRID
+        
+        li $a0, 29
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1, 0
+        jal LOAD_LETTER_P
+        jal DRAW_LETTER
+        
 
+        li $a0, 29
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1, 5
+        jal LOAD_LETTER_A
+        jal DRAW_LETTER
+        
+        li $a0, 29
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1, 10
+        jal LOAD_LETTER_U
+        jal DRAW_LETTER
+        
+        li $a0, 29
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1,15
+        jal LOAD_LETTER_S
+        jal DRAW_LETTER
+        
+        li $a0, 29
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1, 20
+        jal LOAD_LETTER_E
+        jal DRAW_LETTER
+        
+        li $a0, 29
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1, 25
+        jal LOAD_LETTER_D
+        jal DRAW_LETTER
+        
+        return()
+        
+    DRAW_GAME_OVER_MESSAGE:
+        addstack()
+        
+        jal INITIALIZE_MESSAGE_GRID
+        
+        li $a0, 46
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1, 0
+        jal LOAD_LETTER_G
+        jal DRAW_LETTER
+        jal PAINT_DISPLAY
+        jal SLEEP200
+        
+        li $a0, 46
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1, 5
+        jal LOAD_LETTER_A
+        jal DRAW_LETTER
+        jal PAINT_DISPLAY
+        jal SLEEP200
+        
+        li $a0, 46
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1, 10
+        jal LOAD_LETTER_M
+        jal DRAW_LETTER
+        jal PAINT_DISPLAY
+        jal SLEEP200
+        
+        li $a0, 46
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1,16
+        jal LOAD_LETTER_E
+        jal DRAW_LETTER
+        jal PAINT_DISPLAY
+        jal SLEEP200
+        
+        li $a0, 46
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1, 21
+        jal LOAD_LETTER_SPACE
+        jal DRAW_LETTER
+        jal PAINT_DISPLAY
+        
+        li $a0, 46
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1, 25
+        jal LOAD_LETTER_O
+        jal DRAW_LETTER
+        jal PAINT_DISPLAY
+        jal SLEEP200
+        
+        li $a0, 46
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1, 30
+        jal LOAD_LETTER_V
+        jal DRAW_LETTER
+        jal PAINT_DISPLAY
+        jal SLEEP200
+        
+        li $a0, 46
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1, 36
+        jal LOAD_LETTER_E
+        jal DRAW_LETTER
+        jal PAINT_DISPLAY
+        jal SLEEP200
+        
+        li $a0, 46
+        jal GET_MESSAGE_OFFSET
+        move $a0, $v0
+        addi $a1, $v1, 41
+        jal LOAD_LETTER_R
+        jal DRAW_LETTER
+        
+        return()
 
 
 
@@ -1304,7 +1865,7 @@ bright_yellow:      .word       0xffffdd
     PAINT_DISPLAY:
         addstack()
         
-        lw $t0, grid_addresses
+        move $t0, $s0
         lw $t8, width
         mul $t3, $t8, 4 
         
@@ -1314,7 +1875,6 @@ bright_yellow:      .word       0xffffdd
         div $t7, $t7, 2 # number of rows
         
         li, $t6, 0                      # offset
-        
         li $t1, 0                       # set row index (row = 0)
         row_loop_PAINT_DISPLAY:       # Start loop
             
@@ -1329,7 +1889,7 @@ bright_yellow:      .word       0xffffdd
                 lw $s6, 8($t0)
                 add $s7, $s6, $s7
                 
-                # Store the calculated address in the grid_addresses array
+                # Store the calculated address in the game_grid_address array
                 sw $s7, 0($v0)                 # Store the address in the array
                 sw $s7, 4($v0)                 # Store the address in the array
                 add $v0, $v0, $t3
@@ -1414,13 +1974,13 @@ bright_yellow:      .word       0xffffdd
         li $a0, 0               # Lower bound for the random number
         li $a1, 19              # Upper bound (exclusive)
         syscall                 # Make syscall to generate random number
-        addi $s6 $a0 3
+        addi $s6 $a0 7
         
         li $v0, 42              # Load syscall code for random number generation
         li $a0, 0               # Lower bound for the random number
-        li $a1, 23              # Upper bound (exclusive)
+        li $a1, 11              # Upper bound (exclusive)
         syscall                 # Make syscall to generate random number
-        addi $v0 $a0 6
+        addi $v0 $a0 20
         move $v1 $s6
         
         return()
@@ -1436,6 +1996,28 @@ bright_yellow:      .word       0xffffdd
 
 
 ##############################################################################
+# Subsection: >VIEW_METHOD
+
+    LOAD_MESSAGE_VIEW:
+        addstack()
+        lw $s0, message_grid_address
+        jal PAINT_DISPLAY
+        return()
+        
+        
+    LOAD_GAME_VIEW:
+        addstack()
+        lw $s0, game_grid_address
+        jal PAINT_DISPLAY
+        return()
+    
+        
+
+# End of: <DISPLAY_METHOD
+##############################################################################
+
+
+##############################################################################
 # Subsection: >ETC
 
     SLEEP1000:
@@ -1443,6 +2025,24 @@ bright_yellow:      .word       0xffffdd
 
         li $v0, 32
         li $a0, 1000
+        syscall
+        
+        return()
+        
+    SLEEP200:
+        addstack()
+
+        li $v0, 32
+        li $a0, 200
+        syscall
+        
+        return()
+        
+    SLEEP50:
+        addstack()
+
+        li $v0, 32
+        li $a0, 50
         syscall
         
         return()
@@ -1464,18 +2064,656 @@ bright_yellow:      .word       0xffffdd
         end_reset_loop:
         return()
 
-
-
-
+    
+    GET_MESSAGE_OFFSET:
+        
+        addstack()
+        
+        lw $v1, width
+        div $v1, $v1, 2
+        sub $v1, $v1, $a0
+        addi $v1, $v1, 2
+        div $v1, $v1, 2
+        
+        lw $v0, height
+        div $v0, $v0, 2
+        sub $v0, $v0, 5
+        div $v0, $v0, 2
+        
+        return()
+        
 
 # End of: <ETC
 ##############################################################################
 
 
 ##############################################################################
+# Subsection: >LETTER_METHODS
+
+    
+
+# End of: <LETTER_METHODS
+##############################################################################
+    
+    DRAW_LETTER:
+    
+        addstack()
+        
+        move $s5, $t7
+        
+        move $t2, $a0
+        move $t3, $a1
+        lw $t5, letter_address
+        
+        lw $t4, black
+        li $t9, 0
+        row_loop_DRAW_LETTER:
+            
+            li $t1, 0
+            col_loop_DRAW_LETTER:
+
+                move $a0, $t2
+                move $a1, $t3
+                jal GET_CELL_GRID_ADDRESS
+                
+                mul $t6, $t9, 5
+                add $t6, $t6, $t1
+                lw $t7, 0($t5)
+                bne $t6, $t7, skip_drawing_cell
+                
+                sw $t4, 4($v0)
+                addi $t5, $t5, 4
+                skip_drawing_cell:
+
+                addi $t1, $t1, 1
+                addi $t3, $t3, 1
+                bne $t1, 5, col_loop_DRAW_LETTER
+        
+        subi $t3, $t3, 5
+        addi $t9, $t9, 1
+        addi $t2, $t2, 1
+        bne $t9, 5, row_loop_DRAW_LETTER
+        
+        move $t7, $s5
+                
+        return()
+    
+    
+    LOAD_LETTER_P:
+        
+        addstack()
+        
+        lw $t0, letter_address
+        
+        li $t1, 1
+        jal load_letter_value
+        li $t1, 2
+        jal load_letter_value
+        li $t1, 5
+        jal load_letter_value
+        li $t1, 8
+        jal load_letter_value
+        li $t1, 10
+        jal load_letter_value
+        li $t1, 11
+        jal load_letter_value
+        li $t1, 12
+        jal load_letter_value
+        li $t1, 15
+        jal load_letter_value
+        li $t1, 20
+        jal load_letter_value
+        
+        return()
+        
+        load_letter_value:
+            sw $t1, 0($t0)
+            addi $t0, $t0, 4
+            jr $ra
+            
+            
+    LOAD_LETTER_A:
+        
+        addstack()
+        
+        lw $t0, letter_address
+        
+        li $t1, 1
+        jal load_letter_value
+        li $t1, 2
+        jal load_letter_value
+        li $t1, 5
+        jal load_letter_value
+        li $t1, 8
+        jal load_letter_value
+        li $t1, 10
+        jal load_letter_value
+        li $t1, 13
+        jal load_letter_value
+        li $t1, 15
+        jal load_letter_value
+        li $t1, 16
+        jal load_letter_value
+        li $t1, 17
+        jal load_letter_value
+        li $t1, 18
+        jal load_letter_value
+        li $t1, 20
+        jal load_letter_value
+        li $t1, 23
+        jal load_letter_value
+        
+        return()
+        
+        
+    LOAD_LETTER_U:
+        
+        addstack()
+        
+        lw $t0, letter_address
+        
+        li $t1, 0
+        jal load_letter_value
+        li $t1, 3
+        jal load_letter_value
+        li $t1, 5
+        jal load_letter_value
+        li $t1, 8
+        jal load_letter_value
+        li $t1, 10
+        jal load_letter_value
+        li $t1, 13
+        jal load_letter_value
+        li $t1, 15
+        jal load_letter_value
+        li $t1, 18
+        jal load_letter_value
+        li $t1, 21
+        jal load_letter_value
+        li $t1, 22
+        jal load_letter_value
+        
+        return()
+        
+    LOAD_LETTER_S:
+        
+        addstack()
+        
+        lw $t0, letter_address
+        
+        li $t1, 1
+        jal load_letter_value
+        li $t1, 2
+        jal load_letter_value
+        li $t1, 3
+        jal load_letter_value
+        li $t1, 5
+        jal load_letter_value
+        li $t1, 11
+        jal load_letter_value
+        li $t1, 12
+        jal load_letter_value
+        li $t1, 18
+        jal load_letter_value
+        li $t1, 20
+        jal load_letter_value
+        li $t1, 21
+        jal load_letter_value
+        li $t1, 22
+        jal load_letter_value
+        
+        return()
+        
+    LOAD_LETTER_E:
+        
+        addstack()
+        
+        lw $t0, letter_address
+        
+        li $t1, 1
+        jal load_letter_value
+        li $t1, 2
+        jal load_letter_value
+        li $t1, 3
+        jal load_letter_value
+        li $t1, 5
+        jal load_letter_value
+        li $t1, 11
+        jal load_letter_value
+        li $t1, 12
+        jal load_letter_value
+        li $t1, 15
+        jal load_letter_value
+        li $t1, 21
+        jal load_letter_value
+        li $t1, 22
+        jal load_letter_value
+        li $t1, 23
+        jal load_letter_value
+        
+        return()
+
+
+    LOAD_LETTER_D:
+        
+        addstack()
+        
+        lw $t0, letter_address
+        
+        li $t1, 0
+        jal load_letter_value
+        li $t1, 1
+        jal load_letter_value
+        li $t1, 2
+        jal load_letter_value
+        li $t1, 5
+        jal load_letter_value
+        li $t1, 8
+        jal load_letter_value
+        li $t1, 10
+        jal load_letter_value
+        li $t1, 13
+        jal load_letter_value
+        li $t1, 15
+        jal load_letter_value
+        li $t1, 18
+        jal load_letter_value
+        li $t1, 20
+        jal load_letter_value
+        li $t1, 21
+        jal load_letter_value
+        li $t1, 22
+        jal load_letter_value
+        
+        return()
+    
+    
+    LOAD_LETTER_G:
+        
+        addstack()
+        
+        lw $t0, letter_address
+        
+        li $t1, 1
+        jal load_letter_value
+        li $t1, 2
+        jal load_letter_value
+        li $t1, 3
+        jal load_letter_value
+        li $t1, 5
+        jal load_letter_value
+        li $t1, 10
+        jal load_letter_value
+        li $t1, 12
+        jal load_letter_value
+        li $t1, 13
+        jal load_letter_value
+        li $t1, 15
+        jal load_letter_value
+        li $t1, 18
+        jal load_letter_value
+        li $t1, 21
+        jal load_letter_value
+        li $t1, 22
+        jal load_letter_value
+        li $t1, 23
+        jal load_letter_value
+        
+        return()
+        
+LOAD_LETTER_M:
+        
+        addstack()
+        
+        lw $t0, letter_address
+        
+        li $t1, 0
+        jal load_letter_value
+        li $t1, 4
+        jal load_letter_value
+        li $t1, 5
+        jal load_letter_value
+        li $t1, 6
+        jal load_letter_value
+        li $t1, 8
+        jal load_letter_value
+        li $t1, 9
+        jal load_letter_value
+        li $t1, 10
+        jal load_letter_value
+        li $t1, 12
+        jal load_letter_value
+        li $t1, 14
+        jal load_letter_value
+        li $t1, 15
+        jal load_letter_value
+        li $t1, 19
+        jal load_letter_value
+        li $t1, 20
+        jal load_letter_value
+        li $t1, 24
+        jal load_letter_value
+        
+        return()
+        
+    LOAD_LETTER_O:
+        
+        addstack()
+        
+        lw $t0, letter_address
+        
+        li $t1, 1
+        jal load_letter_value
+        li $t1, 2
+        jal load_letter_value
+        li $t1, 5
+        jal load_letter_value
+        li $t1, 8
+        jal load_letter_value
+        li $t1, 10
+        jal load_letter_value
+        li $t1, 13
+        jal load_letter_value
+        li $t1, 15
+        jal load_letter_value
+        li $t1, 18
+        jal load_letter_value
+        li $t1, 21
+        jal load_letter_value
+        li $t1, 22
+        jal load_letter_value
+        
+        return()
+        
+        LOAD_LETTER_V:
+        
+        addstack()
+        
+        lw $t0, letter_address
+        
+        li $t1, 0
+        jal load_letter_value
+        li $t1, 4
+        jal load_letter_value
+        li $t1, 5
+        jal load_letter_value
+        li $t1, 9
+        jal load_letter_value
+        li $t1, 10
+        jal load_letter_value
+        li $t1, 14
+        jal load_letter_value
+        li $t1, 16
+        jal load_letter_value
+        li $t1, 18
+        jal load_letter_value
+        li $t1, 22
+        jal load_letter_value
+        
+        return()
+        
+        LOAD_LETTER_R:
+        
+        addstack()
+        
+        lw $t0, letter_address
+        
+        li $t1, 1
+        jal load_letter_value
+        li $t1, 2
+        jal load_letter_value
+        li $t1, 5
+        jal load_letter_value
+        li $t1, 8
+        jal load_letter_value
+        li $t1, 10
+        jal load_letter_value
+        li $t1, 11
+        jal load_letter_value
+        li $t1, 12
+        jal load_letter_value
+        li $t1, 15
+        jal load_letter_value
+        li $t1, 18
+        jal load_letter_value
+        li $t1, 20
+        jal load_letter_value
+        li $t1, 23
+        jal load_letter_value
+        
+        return()
+        
+        LOAD_LETTER_SPACE:
+        
+        addstack()
+        
+        lw $t0, letter_address
+        
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+        li $t1, -1
+        jal load_letter_value
+         
+        return()
+        
+        DRAW_SCORE:
+        addstack()
+        lw $a3 game_grid_address
+        lw $t9 width
+        mult $t9 $t9 320
+        add $a3 $a3 $t9
+        li $t9 32
+        mult $t9 $t9 50
+        add $a3 $a3 $t9
+        
+        lw $t9 gravity_address
+        lw $t9 16($t9)
+        li $t6 1
+        draw_num_loop:
+        move $a1 $t6
+        move $a0 $t9
+        jal BASE_CONVERT
+        move $t6 $a1
+        move $a0 $v0
+        jal DRAW_NUM
+        subi $a3 $a3 128
+        mult $v1 $v1 5
+        sub $a3 $a3 $v1
+        blt $t6 1000 draw_num_loop
+        return()
+        
+        BASE_CONVERT:
+        addstack()
+        mult $a1 $a1 10
+        div $v0 $a0 $a1
+        mult $v0 $v0 $a1
+        sub $v0 $a0 $v0
+        div $a1 $a1 10
+        div $v0 $v0 $a1
+        mult $a1 $a1 10
+        return()
+        
+        DRAW_NUM:
+        addstack()
+        li $a1 0
+        lw $v1 width
+        mult $v1 $v1 16
+        y_loop:
+        li $a2 0
+        x_loop:
+        jal FINDPX
+        sw $v0 4($a3)
+        addi $a2 $a2 1
+        addi $a3 $a3 32
+        blt $a2 3 x_loop
+        jal FINDPX
+        addi $a1 $a1 1
+        add $a3 $a3 $v1
+        subi $a3 $a3 96
+        blt $a1 5 y_loop
+        return()
+        
+        FINDPX:
+        addstack()
+        beq $a1 0 FINDPX0
+        beq $a1 1 FINDPX1
+        beq $a1 2 FINDPX2
+        beq $a1 3 FINDPX3
+        beq $a1 4 FINDPX4
+        FINDPX0:
+        beq $a2 0 PX1
+        beq $a2 1 PX2
+        beq $a2 2 PX3
+        FINDPX1:
+        beq $a2 0 PX4
+        beq $a2 1 PX0
+        beq $a2 2 PX6
+        FINDPX2:
+        beq $a2 0 PX7
+        beq $a2 1 PX8
+        beq $a2 2 PX3
+        FINDPX3:
+        beq $a2 0 PX10
+        beq $a2 1 PX0
+        beq $a2 2 PX12
+        FINDPX4:
+        beq $a2 0 PX13
+        beq $a2 1 PX14
+        beq $a2 2 PX3
+        
+        PX0:
+        li $v0 0x010100
+        j ENDPX
+        PX1:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX2:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 4 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX3:
+        li $v0 0xffffff
+        j ENDPX
+        PX4:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 2 ENDPX
+        beq $a0 3 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX6:
+        li $v0 0x010100
+        beq $a0 5 ENDPX
+        beq $a0 6 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX7:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX8:
+        li $v0 0x010100
+        beq $a0 0 ENDPX
+        beq $a0 1 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX10:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 3 ENDPX
+        beq $a0 4 ENDPX
+        beq $a0 5 ENDPX
+        beq $a0 7 ENDPX
+        beq $a0 9 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX12:
+        li $v0 0x010100
+        beq $a0 2 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX13:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 4 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        PX14:
+        li $v0 0x010100
+        beq $a0 1 ENDPX
+        beq $a0 4 ENDPX
+        beq $a0 7 ENDPX
+        li $v0 0xffffff
+        j ENDPX
+        ENDPX:
+        return()
+
+
+##############################################################################
 # Subsection: >END_OF_CODE
 
     GAME_OVER:
+        addstack()
+        jal DRAW_GAME_OVER_MESSAGE
+        jal LOAD_MESSAGE_VIEW
+        return()
+        
+        
     END_MAIN:
 
 
