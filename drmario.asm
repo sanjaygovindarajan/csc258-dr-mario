@@ -49,6 +49,7 @@ displayaddress:         .word       0x10008000   # Base address for the display
 game_grid_address:      .word       0x11000000   # Base address for the grid cell addresses
 message_grid_address:   .word       0x12000000   # Base address for the grid cell addresses
 pill_queue_address:     .word       0x13000000
+gravity_address:        .word       0x14000000
 letter_address:         .word       0x20000000  
 
 # NUMERICAL VALUES
@@ -64,7 +65,7 @@ pill_queue_col:     .word       32
 # COLORS (RGB values)
 black:              .word       0x010100     # RGB color code for black
 red:                .word       0xfa26a0     # RGB color code for red
-yellow:             .word       0xf8d210     # RGB color code for yellow
+yellow:             .word       0xf8d210     # RGB color code for yellowff
 blue:               .word       0x2ff3e0     # RGB color code for blue
 rosewater:          .word       0xffc2c7     # RGB color code for rosewater (light pink)
 white:              .word       0xffffff     # RGB color code for white
@@ -92,7 +93,8 @@ bright_yellow:      .word       0xffffdd
 # Subsection: >MAIN
 
     main:
-        
+        jal LEVELS_INIT
+        NEXT_LEVEL:
         jal INIT
         jal PAINT_DISPLAY
         jal game_loop
@@ -112,6 +114,8 @@ bright_yellow:      .word       0xffffdd
         # 2b. Update locations (capsules)
         jal     LET_CURRENT_PILL_FALL
         NO_UPDATE:
+        
+        jal DRAW_SCORE
 
         # 3. Draw the screen
         jal PAINT_DISPLAY
@@ -135,7 +139,8 @@ bright_yellow:      .word       0xffffdd
         li $a0, 10
         syscall
         addi $t9, $t9, 1
-        li $t8, 100
+        lw $t8, gravity_address
+        lw $t8, 0($t8)
         bne $t9, $t8, SLEEP_LOOP
 
     return()
@@ -150,12 +155,32 @@ bright_yellow:      .word       0xffffdd
 ##############################################################################
 # Subsection: >INITIALIZATION
 
+    # Resets the level of the game as well
+    LEVELS_INIT:
+        addstack()
+        li $s0 3
+        lw $s1 gravity_address
+        sw $s0 4($s1)
+        li $s0 100
+        sw $s0 12($s1)
+        sw $zero 16($s1)
+        return()
+
     INIT:
         
         addstack()
         
         jal INITIALIZE_GAME_GRID
         jal INITIALIZE_MESSAGE_GRID
+        
+        lw $s1 gravity_address
+        lw $s0 12($s1)
+        sw $s0 0($s1)
+        
+        lw $s0 4($s1)
+        addi $s0 $s0 1 # Increase the number of viruses by 1
+        sw $s0 4($s1)
+        sw $s0 8($s1)
         
         lw $s0, game_grid_address          # $s0 is the address of the grid        
         lw $s1, initial_pill_row
@@ -164,7 +189,8 @@ bright_yellow:      .word       0xffffdd
         jal DRAW_BOTTLE                 # Draw the bottle
         jal DRAW_NEW_PILL
         
-        li $t8 4
+        lw $t8 gravity_address
+        lw $t8 4($t8)
         DRAW_VIRUSES:
         jal DRAW_VIRUS
         subi $t8 $t8 1
@@ -213,6 +239,7 @@ bright_yellow:      .word       0xffffdd
                 move $t6, $s7
                 sw $t6, 4($t2)             # Store the color in the array
                 sw $zero, 8($t2)           # Store that it is not a virus
+                sw $zero, 12($t2)          # Store direction of support
                 
                 addi $t2, $t2, 32           # Move to the next array index (each address is 4 bytes)
                 addi $t4, $t4, 1           # Increment column index (j++)
@@ -849,7 +876,7 @@ bright_yellow:      .word       0xffffdd
 
 ##############################################################################
 # Subsection: >COLLISION_DETECTOR
-
+    # Detects if there is a pill to the left
     detect_left:
     add $a1 $a1 4
     add $a0 $a0 4
@@ -951,15 +978,43 @@ bright_yellow:      .word       0xffffdd
     beq $t8 0x010100 finish_detect_fall # If there is no block below, do nothing
     beq $a0 $a1 finish_detect_fall # If one half falls onto the other half, it is ok
     beq $a0 $a2 finish_detect_fall
+    
     addi $t9 $t9 1
+    
+    sub $a0 $a0 $a3
+    addi $a0 $a0 32
+    beq $a0 $a1 mark_right
+    beq $a0 $a2 mark_right
+    subi $a0 $a0 64
+    beq $a0 $a1 mark_left
+    beq $a0 $a2 mark_left
+    addi $a0 $a0 32
+    
     finish_detect_fall:
     jr $ra
+    
+    mark_left:
+    li $v1 32
+    sw $v1 8($a0)
+    addi $a0 $a0 32
+    li $v1 -32
+    sw $v1 8($a0)
+    j finish_detect_fall
+    
+    mark_right:
+    li $v1 -32
+    sw $v1 8($a0)
+    subi $a0 $a0 32
+    li $v1 32
+    sw $v1 8($a0)
+    j finish_detect_fall
 
 
 
 
     delete_block: # Deletes t9 blocks
     addstack()
+    addi $a3 $a3 1
 
     mult $t7 $t7 -1 # Changes the direction
     j delete_block_down
@@ -968,12 +1023,51 @@ bright_yellow:      .word       0xffffdd
 
     move $t5 $t7
     move $a0 $s5
+    lw $s7 4($s5)
+    beq $s7 0 skip_eliminate_virus
+    lw $s7 gravity_address
+    
+    lw $t8 16($s7)
+    addi $t8 $t8 1 # Increment score
+    sw $t8 16($s7)
+    
+    lw $t8 8($s7)
+    subi $t8 $t8 1
+    sw $t8 8($s7)
+    beq $t8 0 NEXT_LEVEL
+    skip_eliminate_virus:
     li $s7 0x010100
     sw $s7 0($s5)
+    
+    lw $s7 8($s5)
+    sw $zero 8($s5)
+    add $s5 $s5 $s7
+    sw $zero 8($s5)
+    
+    lw $t6 width
+    mult $t6 $t6 16
+    add $s5 $s5 $t6
+    
+    beq $s7 $zero skip_fall
+    lw $t4 0($s5)
+    bne $t4 0x010100 skip_fall
+    
+    move $t4 $s5
+    move $t3 $s7
+    move $t7 $t5
+    # jal chain_fall
+    move $t5 $t7
+    move $s5 $t4
+    move $s7 $t3
+    skip_fall:
+    sub $s5 $s5 $t6
+    
+    sub $s5 $s5 $s7
+    
     sw $zero 4($s5)
     move $t7 $t5
 
-    jal chain_fall
+    # jal chain_fall
     addi $t9 $t9 -1 # Decrease the counter
     beq $t9 $zero delete_return # If the counter is 0 we switch to the next instruction
     j delete_block_iterate # Otherwise we continue the loop
@@ -987,6 +1081,12 @@ bright_yellow:      .word       0xffffdd
     j delete_block_iterate
 
     delete_return:
+    lw $s7 gravity_address
+    lw $t6 0($s7)
+    beq $t6 5 skip_speed_up
+    subi $t6 $t6 1
+    sw $t6 0($s7)
+    skip_speed_up:
     lw $ra, 0($sp)                  # Load saved $ra
     addi $sp, $sp, 4                # Restore stack pointer
     jr $ra
@@ -998,10 +1098,58 @@ bright_yellow:      .word       0xffffdd
     jal GET_PILL_ADDRESSES
     addi $v0 $v0 4
     addi $v1 $v1 4
+    
+    li $a3 0
     lw $t3 0($v0)
-
-    skip_left_3:
     move $s5 $v0
+    jal CHECK_DELETE
+    lw $t3 0($v1)
+    move $s5 $v1
+    jal CHECK_DELETE
+    beq $a3 $zero finish_post_fall
+    jal LOOP_DELETE
+    jal LOOP_FALL
+    finish_post_fall:
+    j PREP_DRAW_PILL
+    
+    LOOP_DELETE:
+    addstack()
+    li $v0 0x11000004
+    li $a3 0
+    loop_delete:
+    move $s5 $v0
+    lw $t3 0($s5)
+    beq $t3 0x2ff3e0 prep_delete
+    beq $t3 0xf8d210 prep_delete
+    beq $t3 0xfa26a0 prep_delete
+    finish_loop_delete:
+    addi $v0 $v0 32
+    lw $t3 width
+    lw $s5 height
+    mult $t3 $t3 $s5
+    mult $t3 $t3 8
+    addi $t3 $t3 0x11000004
+    bge $v0 $t3 loop_delete_return
+    j loop_delete
+    prep_delete:
+    jal CHECK_DELETE
+    j finish_loop_delete
+    loop_delete_return:
+    bne $a3 $zero restart_loop
+    return()
+    restart_loop:
+    li $v0 0x11000004
+    li $a3 0
+    j loop_delete
+    
+    CHECK_DELETE:
+    # Deletes any chain starting at a particular half-capsule.
+    # Parameters:
+    # s5: The half-capsule's address
+    # t3: The half-capsule's color
+    addstack()
+    move $v0 $s5
+    
     li $t9 1 # Sets counter t9 to 1
     li $t7 -32 # Pills are -32 apart
 
@@ -1063,68 +1211,12 @@ bright_yellow:      .word       0xffffdd
     blt $t9 4 skip_left_4b
     jal delete_block
     skip_left_4b:
-    lw $t3 0($v1)
-    move $s5 $v1 # Reset s5
-    li $t9 1 # Sets counter t9 to 1
-    li $t7 -32 # Pills are -32 apart
-
-    left_loop_4:
-    add $s5 $s5 $t7
-    lw $t8 0($s5)
-    bne $t8 $t3 skip_right_4 # If the chain ends, check a different direction
-    addi $t9 $t9 1
-    j left_loop_4
-
-    skip_right_4:
-    # blt $t9 4 skip_right_4b
-    # jal delete_block
-    skip_right_4b:
-    move $s5 $v1 # Reset s5
-    # li $t9 1 # Sets counter t9 to 1
-    li $t7 32 # Pills are 32 apart
-    right_loop_4:
-    add $s5 $s5 $t7
-    lw $t8 0($s5)
-    bne $t8 $t3 skip_down_4
-    addi $t9 $t9 1
-    j right_loop_4
-
-    skip_down_4:
-    blt $t9 4 skip_down_4b
-    jal delete_block
-    skip_down_4b:
-    move $s5 $v1 # Reset s5
-    li $t9 1 # Sets counter t9 to 1
-    lw $t7 width
-    mult $t7 $t7 16
-
-    down_loop_4:
-    add $s5 $s5 $t7
-    lw $t8 0($s5)
-    bne $t8 $t3 skip_up_4
-    addi $t9 $t9 1
-    j down_loop_4
+    return()
     
-    skip_up_4:
-    # blt $t9 4 skip_up_3b
-    # jal delete_block
-    skip_up_4b:
-    move $s5 $v1 # Reset s5
-    # li $t9 1 # Sets counter t9 to 1
-    lw $t7 width
-    mult $t7 $t7 -16
 
-    up_loop_4:
-    add $s5 $s5 $t7
-    lw $t8 0($s5)
-    bne $t8 $t3 finish_deletion
-    addi $t9 $t9 1
-    j up_loop_4
+# END BLOCK DELETION
+# BEGIN FALLING BLOCKS
 
-    finish_deletion:
-    blt $t9 4 PREP_DRAW_PILL
-    jal delete_block
-    j PREP_DRAW_PILL
 
     chain_fall:
     move $s7 $s5
@@ -1151,7 +1243,13 @@ bright_yellow:      .word       0xffffdd
 
     sw $s6 0($s7)
     add $s7 $s7 $t6 # s7 is one below the capsule to drop
-    sw $t8 0($s7) #
+    sw $t8 0($s7)
+    
+    sub $s7 $s7 $t6
+    lw $s6 8($s7)
+    sw $zero 8($s7)
+    add $s7 $s7 $t6
+    sw $s6 8($s7)
 
     add $s7 $s7 $t6 # s7 is one below the place we just dropped to
     lw $t8 0($s7)
@@ -1190,6 +1288,9 @@ bright_yellow:      .word       0xffffdd
         KEYBOARD_HANDLER:
             
             lw $t2, 4($t0)
+            beq $t2, 0x65, SET_DIFFICULTY_EASY
+            beq $t2, 0x6d, SET_DIFFICULTY_MEDIUM
+            beq $t2, 0x68, SET_DIFFICULTY_HARD
             beq $t2, 0x71, HANDLE_QUIT
             beq $t2, 0x77, HANDLE_ROTATE
             beq $t2, 0x61, HANDLE_MOVE_LEFT
@@ -1198,6 +1299,25 @@ bright_yellow:      .word       0xffffdd
             beq $t2, 0x70, HANDLE_PAUSE
             beq $t2, 0x72, HANDLE_RETRY
             j end_CHECK_KEYBOARD_INPUT
+        
+        SET_DIFFICULTY_EASY:
+        li $t2 100
+        lw $t1 gravity_address
+        sw $t2 12($t1)
+        j end_CHECK_KEYBOARD_INPUT
+        SET_DIFFICULTY_MEDIUM:
+        lw $t1 gravity_address
+        li $t2 50
+        sw $t2 12($t1)
+        li $t9 0
+        j end_CHECK_KEYBOARD_INPUT
+        SET_DIFFICULTY_HARD:
+        lw $t1 gravity_address
+        li $t2 5
+        sw $t2 12($t1)
+        sw $t2 0($t1)
+        li $t9 0
+        j end_CHECK_KEYBOARD_INPUT
         
         HANDLE_QUIT:
             jal INIT
@@ -1268,6 +1388,7 @@ bright_yellow:      .word       0xffffdd
             jal PAINT_DISPLAY
             
             j end_CHECK_KEYBOARD_INPUT
+        
                 
         HANDLE_DROP:
             
@@ -1316,7 +1437,94 @@ bright_yellow:      .word       0xffffdd
             return()
             
             
+    LOOP_FALL:
+    addstack()
+    # t5 is a counter
+    repeat_loop_fall:
+    move $t5 $zero
+    move $s1 $zero
+    y_loop_fall:
+    move $s2 $zero
     
+    x_loop_fall:
+    
+    # Get location in the cell
+    move $a0 $s1
+    move $a1 $s2
+    jal GET_CELL_GRID_ADDRESS
+    
+    # Skip viruses
+    lw $t9 8($v0)
+    bne $t9 $zero recurse_x
+    
+    # Skip anything but red, blue, yellow
+    lw $t9 4($v0)
+    beq $t9 0x2ff3e0 do_fall
+    beq $t9 0xf8d210 do_fall
+    beq $t9 0xfa26a0 do_fall
+    
+    # Increase s2
+    recurse_x:
+    addi $s2 $s2 1
+    bge $s2 30 recurse_y
+    j x_loop_fall
+    
+    # Increase s1
+    recurse_y:
+    addi $s1 $s1 1
+    lw $t9 height
+    div $t9 $t9 2
+    bge $s1 $t9 end_fall
+    j y_loop_fall
+    
+    end_fall:
+    bne $t5 $zero repeat_loop_fall
+    return()
+    
+    do_fall:
+    
+    # Orient the capsules
+    lw $s3 12($v0)
+    div $s3 $s3 32
+    addi $s3 $s3 2
+    
+    move $t8 $v0 # t8 is old address
+    
+    
+    jal FIND_BOTTOM
+    
+    move $a0 $v0
+    move $a1 $s2
+    jal GET_CELL_GRID_ADDRESS
+    
+    jal SHIFT_DOWN
+    lw $s3 12($t8)
+    beq $s3 0 recurse_x
+    
+    add $t8 $t8 $s3
+    add $v0 $v0 $s3
+    jal SHIFT_DOWN
+    
+    j recurse_x
+    
+    SHIFT_DOWN:
+    # Moves contents of t8 to v0
+    addstack()
+    
+    beq $t8 $v0 shift_down_return
+    addi $t5 $t5 1
+    
+    lw $t9 4($t8)
+    sw $t9 4($v0)
+    li $t9 0x010100
+    sw $t9 4($t8)
+    
+    lw $t9 12($t8)
+    sw $t9 12($v0)
+    sw $zero 12($t8)
+    
+    shift_down_return:
+    return()
         
     FIND_BOTTOM:
 
@@ -1767,9 +1975,9 @@ bright_yellow:      .word       0xffffdd
         
         li $v0, 42              # Load syscall code for random number generation
         li $a0, 0               # Lower bound for the random number
-        li $a1, 23              # Upper bound (exclusive)
+        li $a1, 11              # Upper bound (exclusive)
         syscall                 # Make syscall to generate random number
-        addi $v0 $a0 9
+        addi $v0 $a0 20
         move $v1 $s6
         
         return()
